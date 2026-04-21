@@ -1,0 +1,324 @@
+{{- if .Values.layer2_platform.enabled }}
+# =============================================================================
+# Layer 2 - Platform
+# targets: ALB(YACE), istio-ingress, istiod, aws-load-balancer-controller, yace
+#       keycloak: exporter not deployed  enabled: false
+# =============================================================================
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: layer-platform-rules
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    release: {{ .Values.global.releaseLabel }}
+    layer: platform
+spec:
+  groups:
+
+    # =========================================================================
+    # GROUP 1. AWS Load Balancer Controller
+    # =========================================================================
+    - name: platform.lbc
+      rules:
+
+        - alert: AwsLoadBalancerControllerDown
+          expr: up{job="aws-load-balancer-controller-metrics"} == 0
+          for: {{ .Values.layer2_platform.for.lbc_down }}
+          labels:
+            severity: critical
+            layer: platform
+            component: aws-load-balancer-controller
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "AWS Load Balancer Controller Down"
+            description: "AWS Load Balancer Controller is not responding. Ingress/ALB    in progress."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+    # =========================================================================
+    # GROUP 2. ALB (YACE - aws_applicationelb_* metrics)
+    # =========================================================================
+    - name: platform.alb
+      rules:
+
+        - alert: AlbHigh5xxRateWarning
+          expr: |
+            (
+              rate(aws_applicationelb_httpcode_elb_5_xx_count_sum[5m])
+              /
+              clamp_min(rate(aws_applicationelb_request_count_sum[5m]), 0.001)
+            ) > {{ .Values.layer2_platform.thresholds.alb_5xx_rate_warning }}
+          for: {{ .Values.layer2_platform.for.alb_5xx_warning }}
+          labels:
+            severity: warning
+            layer: platform
+            component: alb
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "ALB 5xx Rate Warning: {{ "{{" }} $labels.dimension_LoadBalancer {{ "}}" }}"
+            description: "ALB {{ "{{" }} $labels.dimension_LoadBalancer {{ "}}" }} 5xx rate {{ "{{" }} $value | humanizePercentage {{ "}}" }}. threshold: {{ .Values.layer2_platform.thresholds.alb_5xx_rate_warning | mulf 100 }}%"
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: AlbHigh5xxRateCritical
+          expr: |
+            (
+              rate(aws_applicationelb_httpcode_elb_5_xx_count_sum[5m])
+              /
+              clamp_min(rate(aws_applicationelb_request_count_sum[5m]), 0.001)
+            ) > {{ .Values.layer2_platform.thresholds.alb_5xx_rate_critical }}
+          for: {{ .Values.layer2_platform.for.alb_5xx_critical }}
+          labels:
+            severity: critical
+            layer: platform
+            component: alb
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "ALB 5xx Rate Critical: {{ "{{" }} $labels.dimension_LoadBalancer {{ "}}" }}"
+            description: "ALB {{ "{{" }} $labels.dimension_LoadBalancer {{ "}}" }} 5xx rate {{ "{{" }} $value | humanizePercentage {{ "}}" }}. Immediate action required."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: AlbHighLatencyWarning
+          expr: |
+            aws_applicationelb_target_response_time_p95 > {{ .Values.layer2_platform.thresholds.alb_latency_warning }}
+          for: {{ .Values.layer2_platform.for.alb_latency_warning }}
+          labels:
+            severity: warning
+            layer: platform
+            component: alb
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "ALB Latency Warning: {{ "{{" }} $labels.dimension_LoadBalancer {{ "}}" }}"
+            description: "ALB {{ "{{" }} $labels.dimension_LoadBalancer {{ "}}" }} p95 time {{ "{{" }} $value | humanizeDuration {{ "}}" }}. threshold: {{ .Values.layer2_platform.thresholds.alb_latency_warning }}s"
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: AlbHighLatencyCritical
+          expr: |
+            aws_applicationelb_target_response_time_p95 > {{ .Values.layer2_platform.thresholds.alb_latency_critical }}
+          for: {{ .Values.layer2_platform.for.alb_latency_critical }}
+          labels:
+            severity: critical
+            layer: platform
+            component: alb
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "ALB Latency Critical: {{ "{{" }} $labels.dimension_LoadBalancer {{ "}}" }}"
+            description: "ALB {{ "{{" }} $labels.dimension_LoadBalancer {{ "}}" }} p95 time {{ "{{" }} $value | humanizeDuration {{ "}}" }}. Immediate action required."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+    # =========================================================================
+    # GROUP 3. Istio Ingress Gateway
+    # =========================================================================
+    - name: platform.istio_ingress
+      rules:
+
+        - alert: IstioIngressDown
+          expr: up{job="istio-ingress-metrics"} == 0
+          for: {{ .Values.layer2_platform.for.istio_ingress_down }}
+          labels:
+            severity: critical
+            layer: platform
+            component: istio-ingress
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Istio Ingress Gateway Down"
+            description: "Istio Ingress Gateway is not responding.    ."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: IngressHigh5xxRateWarning
+          expr: |
+            (
+              sum(rate(istio_requests_total{
+                source_workload="istio-ingressgateway",
+                source_workload_namespace="istio-system",
+                response_code=~"5.."
+              }[5m]))
+              /
+              clamp_min(
+                sum(rate(istio_requests_total{
+                  source_workload="istio-ingressgateway",
+                  source_workload_namespace="istio-system"
+                }[5m])),
+                0.001
+              )
+            ) > {{ .Values.layer2_platform.thresholds.ingress_5xx_rate_warning }}
+          for: {{ .Values.layer2_platform.for.ingress_5xx_warning }}
+          labels:
+            severity: warning
+            layer: platform
+            component: istio-ingress
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Ingress 5xx Rate Warning"
+            description: "Istio IngressGateway 5xx rate {{ "{{" }} $value | humanizePercentage {{ "}}" }}."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: IngressHigh5xxRateCritical
+          expr: |
+            (
+              sum(rate(istio_requests_total{
+                source_workload="istio-ingressgateway",
+                source_workload_namespace="istio-system",
+                response_code=~"5.."
+              }[5m]))
+              /
+              clamp_min(
+                sum(rate(istio_requests_total{
+                  source_workload="istio-ingressgateway",
+                  source_workload_namespace="istio-system"
+                }[5m])),
+                0.001
+              )
+            ) > {{ .Values.layer2_platform.thresholds.ingress_5xx_rate_critical }}
+          for: {{ .Values.layer2_platform.for.ingress_5xx_critical }}
+          labels:
+            severity: critical
+            layer: platform
+            component: istio-ingress
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Ingress 5xx Rate Critical"
+            description: "Istio IngressGateway 5xx rate {{ "{{" }} $value | humanizePercentage {{ "}}" }}. Immediate action required."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: IngressHighLatencyWarning
+          expr: |
+            histogram_quantile(0.99,
+              sum by (le) (
+                rate(istio_request_duration_milliseconds_bucket{
+                  source_workload="istio-ingressgateway",
+                  source_workload_namespace="istio-system"
+                }[5m])
+              )
+            ) / 1000 > {{ .Values.layer2_platform.thresholds.ingress_latency_p99_warning }}
+          for: {{ .Values.layer2_platform.for.ingress_latency_warning }}
+          labels:
+            severity: warning
+            layer: platform
+            component: istio-ingress
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Ingress Latency p99 Warning"
+            description: "Istio IngressGateway p99  {{ "{{" }} $value | humanizeDuration {{ "}}" }}."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: IngressHighLatencyCritical
+          expr: |
+            histogram_quantile(0.99,
+              sum by (le) (
+                rate(istio_request_duration_milliseconds_bucket{
+                  source_workload="istio-ingressgateway",
+                  source_workload_namespace="istio-system"
+                }[5m])
+              )
+            ) / 1000 > {{ .Values.layer2_platform.thresholds.ingress_latency_p99_critical }}
+          for: {{ .Values.layer2_platform.for.ingress_latency_critical }}
+          labels:
+            severity: critical
+            layer: platform
+            component: istio-ingress
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Ingress Latency p99 Critical"
+            description: "Istio IngressGateway p99  {{ "{{" }} $value | humanizeDuration {{ "}}" }}. Immediate action required."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+    # =========================================================================
+    # GROUP 4. Istiod (Control Plane)
+    # =========================================================================
+    - name: platform.istiod
+      rules:
+
+        - alert: IstiodDown
+          expr: up{job="istiod"} == 0
+          for: {{ .Values.layer2_platform.for.istiod_down }}
+          labels:
+            severity: critical
+            layer: platform
+            component: istiod
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Istiod Down"
+            description: "Istiod(Istio Control Plane) is not responding.       in progress."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+    # =========================================================================
+    # GROUP 5. YACE (CloudWatch Exporter)
+    # =========================================================================
+    - name: platform.yace
+      rules:
+
+        # YACE down = RDS/ALB/ElastiCache CloudWatch metrics    critical
+        - alert: YaceDown
+          expr: up{job="yace-prometheus-yet-another-cloudwatch-exporter"} == 0
+          for: {{ .Values.layer2_platform.for.yace_down }}
+          labels:
+            severity: critical
+            layer: platform
+            component: yace
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "YACE (CloudWatch Exporter) Down"
+            description: "YACE is not responding. RDS/ALB/ElastiCache CloudWatch metrics  in progress."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+    # =========================================================================
+    # GROUP 6. Keycloak - exporter not deployed,   enabled: true
+    # =========================================================================
+    {{- if .Values.layer2_platform.keycloak.enabled }}
+    - name: platform.keycloak
+      rules:
+
+        - alert: KeycloakDown
+          expr: up{job="keycloak"} == 0
+          for: {{ .Values.layer2_platform.for.keycloak_down }}
+          labels:
+            severity: critical
+            layer: platform
+            component: keycloak
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Keycloak Down"
+            description: "Keycloak   is not responding. /  ."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+    {{- end }}
+
+{{- end }}

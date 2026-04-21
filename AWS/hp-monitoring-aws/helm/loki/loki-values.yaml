@@ -1,0 +1,174 @@
+# grafana/loki (chart: 6.53.x) - EKS용
+# 목표: SimpleScalable + S3 + IRSA + 2AZ 분산 + retention
+deploymentMode: SimpleScalable
+
+monitoring:
+  serviceMonitor:
+    enabled: true
+    labels:
+      release: kps
+
+chunksCache:
+  nodeSelector:
+    nodepool: obs
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: obs
+      effect: NoSchedule
+  allocatedMemory: 1024
+  resources:
+    requests:
+      cpu: 100m
+      memory: 1256Mi
+    limits:
+      cpu: 500m
+      memory: 1536Mi
+
+resultsCache:
+  nodeSelector:
+    nodepool: obs
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: obs
+      effect: NoSchedule
+  allocatedMemory: 512
+  resources:
+    requests:
+      cpu: 50m
+      memory: 640Mi
+    limits:
+      cpu: 200m
+      memory: 768Mi
+
+# IRSA: S3 접근용 IAM Role (값은 네가 채움)
+serviceAccount:
+  create: true
+  name: loki
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::681224237958:role/hp-eks-loki-s3-role
+
+# SimpleScalable 구성요소 replica + AZ 분산(hard)
+write:
+  nodeSelector:
+    nodepool: obs
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: obs
+      effect: NoSchedule
+  replicas: 2
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - topologyKey: topology.kubernetes.io/zone
+
+read:
+  nodeSelector:
+    nodepool: obs
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: obs
+      effect: NoSchedule
+  replicas: 2
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - topologyKey: topology.kubernetes.io/zone
+
+# backend: ruler가 여기서 동작 (SimpleScalable에서 ruler는 backend 컴포넌트)
+backend:
+  nodeSelector:
+    nodepool: obs
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: obs
+      effect: NoSchedule
+  replicas: 2
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - topologyKey: topology.kubernetes.io/zone
+  # Loki Ruler가 읽을 룰 파일을 ConfigMap으로 마운트
+  extraVolumes:
+    - name: loki-ruler-rules
+      configMap:
+        name: loki-ruler-rules
+  extraVolumeMounts:
+    - name: loki-ruler-rules
+      mountPath: /etc/loki/rules
+      readOnly: true
+
+canary:
+  nodeSelector:
+    nodepool: obs
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: obs
+      effect: NoSchedule
+
+gateway:
+  nodeSelector:
+    nodepool: obs
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: obs
+      effect: NoSchedule
+
+loki:
+
+  # 2AZ면 replication_factor는 2가 자연스러움
+  commonConfig:
+    replication_factor: 2
+
+  # retention(30일) - 시간 단위가 안전
+  limits_config:
+    retention_period: 720h
+
+  compactor:
+    retention_enabled: true
+    delete_request_store: s3
+
+  # S3 저장 (Secret 커밋 X: accessKey/secretKey 비움, IRSA로 처리)
+  storage:
+    type: s3
+    bucketNames:
+      chunks: hp-loki-chunks
+      ruler: hp-loki-ruler
+    s3:
+      region: ap-northeast-2
+      s3ForcePathStyle: false
+      insecure: false
+      accessKeyId: null
+      secretAccessKey: null
+
+  # TSDB schema
+  schemaConfig:
+    configs:
+      - from: "2026-03-01"
+        store: tsdb
+        object_store: s3
+        schema: v13
+        index:
+          prefix: loki_index_
+          period: 24h
+
+  # Loki Ruler → Alertmanager 알람 전송
+  rulerConfig:
+    enable_api: true
+    alertmanager_url: http://kps-kube-prometheus-stack-alertmanager.observability.svc.cluster.local:9093
+    rule_path: /tmp/loki/rules
+    storage:
+      type: local
+      local:
+        directory: /etc/loki/rules
+
+# Loki UI는 기본 OFF(우리는 Grafana Explore로 보는 전제)
+# loki:
+#   ui:
+#     enabled: false

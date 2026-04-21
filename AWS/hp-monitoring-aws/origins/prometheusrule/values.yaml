@@ -1,0 +1,300 @@
+# =============================================================================
+# hp-observability-rules — values.yaml
+# 모든 임계값 / for duration / enabled 플래그를 여기서 관리
+# 운영 중 튜닝이 필요하면 이 파일만 수정
+# =============================================================================
+
+global:
+  namespace: observability
+  releaseLabel: kps
+  cluster: hp-eks
+  environment: prod
+  team: aiops
+  runbook_url: "https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59"
+  dashboard_url: "https://grafana.homeplate.internal"
+
+# =============================================================================
+# Layer 1 — Infrastructure
+# 대상: apiserver, kubelet, coredns, node-exporter, kube-state-metrics, PVC/PV
+# =============================================================================
+layer1_infrastructure:
+  enabled: true
+
+  thresholds:
+    node_cpu_warning: 0.80
+    node_cpu_critical: 0.90
+    node_memory_warning: 0.85
+    node_memory_critical: 0.95
+    node_disk_warning: 0.80
+    node_disk_critical: 0.90
+    pvc_used_warning: 0.80
+    pvc_used_critical: 0.90
+    pvc_predict_hours: 4
+
+  for:
+    node_not_ready: 1m
+    kubelet_down: 1m
+    apiserver_down: 1m
+    coredns_down: 1m
+    target_down: 3m
+    pod_not_ready: 1m
+    pod_crashloop: 1m
+    deployment_mismatch: 5m
+    node_cpu_warning: 10m
+    node_cpu_critical: 5m
+    node_memory_warning: 10m
+    node_memory_critical: 5m
+    node_disk_warning: 10m
+    node_disk_critical: 5m
+    pvc_used_warning: 10m
+    pvc_used_critical: 5m
+    pvc_predict_full: 10m
+    pv_not_bound: 5m
+
+# =============================================================================
+# Layer 2 — Platform
+# 대상: ALB, istio-ingress, istiod, aws-load-balancer-controller, yace, keycloak
+# =============================================================================
+layer2_platform:
+  enabled: true
+
+  thresholds:
+    alb_5xx_rate_warning: 0.01
+    alb_5xx_rate_critical: 0.05
+    alb_latency_warning: 1.0
+    alb_latency_critical: 3.0
+    ingress_5xx_rate_warning: 0.01
+    ingress_5xx_rate_critical: 0.05
+    ingress_latency_p99_warning: 1.0
+    ingress_latency_p99_critical: 3.0
+
+  for:
+    lbc_down: 1m
+    istio_ingress_down: 1m
+    istiod_down: 1m
+    yace_down: 3m
+    keycloak_down: 1m
+    alb_5xx_warning: 5m
+    alb_5xx_critical: 3m
+    alb_latency_warning: 5m
+    alb_latency_critical: 3m
+    ingress_5xx_warning: 5m
+    ingress_5xx_critical: 3m
+    ingress_latency_warning: 5m
+    ingress_latency_critical: 3m
+
+  # Keycloak: exporter 미배포 상태 → 메트릭 없음
+  keycloak:
+    enabled: false
+
+# =============================================================================
+# Layer 3 — Delivery
+# 대상: Jenkins, SonarQube, ArgoCD (server/app-controller/repo-server/appset-controller)
+# =============================================================================
+layer3_delivery:
+  enabled: true
+
+  thresholds:
+    jenkins_queue_warning: 10
+    jenkins_queue_critical: 30
+    jenkins_executor_sat_warning: 0.80
+    jenkins_executor_sat_critical: 0.95
+    argocd_app_not_synced_warning: 1
+    argocd_app_not_synced_critical: 3
+
+  for:
+    jenkins_down: 1m
+    sonarqube_down: 1m
+    argocd_server_down: 1m
+    argocd_app_controller_down: 1m
+    argocd_repo_server_down: 1m
+    argocd_appset_controller_down: 1m
+    jenkins_queue_warning: 10m
+    jenkins_queue_critical: 5m
+    jenkins_executor_sat_warning: 10m
+    jenkins_executor_sat_critical: 5m
+    argocd_app_not_synced_warning: 10m
+    argocd_app_not_synced_critical: 5m
+    argocd_app_degraded: 3m
+    argocd_cluster_disconnected: 3m
+    sonarqube_ce_pending: 15m
+
+# =============================================================================
+# Layer 4 — Observability
+# 대상: Prometheus, Alertmanager, Grafana,
+#       Loki (write/read/backend/gateway),
+#       Tempo (distributor/ingester/querier/query-frontend/compactor),
+#       Alloy collector, Alloy logs
+# =============================================================================
+layer4_observability:
+  enabled: true
+
+  thresholds:
+    prometheus_target_down_warning: 1
+    prometheus_target_down_critical: 5
+    loki_error_rate_warning: 0.05
+    loki_error_rate_critical: 0.10
+    tempo_error_rate_warning: 0.05
+    tempo_error_rate_critical: 0.10
+
+  for:
+    prometheus_down: 1m
+    alertmanager_down: 1m
+    grafana_down: 1m
+    loki_write_down: 1m
+    loki_read_down: 1m
+    loki_backend_down: 1m
+    tempo_distributor_down: 1m
+    tempo_ingester_down: 1m
+    tempo_querier_down: 1m
+    tempo_query_frontend_down: 1m
+    tempo_compactor_down: 3m
+    alloy_collector_down: 1m
+    alloy_logs_down: 1m
+    prometheus_target_warning: 5m
+    prometheus_target_critical: 3m
+    loki_error_warning: 5m
+    loki_error_critical: 3m
+    tempo_error_warning: 5m
+    tempo_error_critical: 3m
+
+# =============================================================================
+# Layer 5 — Data
+# 대상: RDS MariaDB, RDS PostgreSQL, ElastiCache Redis
+# =============================================================================
+layer5_data:
+  enabled: true
+
+  thresholds:
+    mariadb_conn_ratio_warning: 0.70
+    mariadb_conn_ratio_critical: 0.90
+    mariadb_replica_lag_warning: 10
+    mariadb_replica_lag_critical: 30
+    redis_memory_warning: 0.75
+    redis_memory_critical: 0.90
+    redis_hit_ratio_warning: 0.80
+    rds_cpu_warning: 0.80
+    rds_cpu_critical: 0.90
+    rds_storage_warning: 5368709120 # 5GB (bytes)
+    rds_storage_critical: 1073741824 # 1GB (bytes)
+
+  for:
+    mariadb_exporter_down: 1m
+    redis_exporter_down: 1m
+    mariadb_conn_warning: 10m
+    mariadb_conn_critical: 5m
+    mariadb_replica_lag_warning: 5m
+    mariadb_replica_lag_critical: 3m
+    mariadb_replica_io_stopped: 1m
+    mariadb_replica_sql_stopped: 1m
+    redis_memory_warning: 10m
+    redis_memory_critical: 5m
+    redis_hit_ratio_warning: 15m
+    rds_cpu_warning: 10m
+    rds_cpu_critical: 5m
+    rds_storage_warning: 10m
+    rds_storage_critical: 5m
+
+  # MongoDB: exporter 배포
+  mongodb:
+    enabled: true
+
+  # Kafka/Strimzi: exporter 배포
+  kafka:
+    enabled: true
+
+  # RDS 인스턴스명 (YACE dimension_DBInstanceIdentifier 필터용)
+  rds_instances:
+    mariadb:
+      - hp-rds-master
+      - hp-rds-replica
+    postgresql_aiops: aiops-postgres
+    postgresql_keycloak: keycloak-db-prod
+
+  # PostgreSQL: postgres_exporter 배포
+  postgresql:
+    enabled: true
+
+# =============================================================================
+# Layer 6 — Application
+# 대상: hp-frontend, hp-backend, hp-workers, aiops-backend
+# =============================================================================
+layer6_application:
+  enabled: true
+
+  thresholds:
+    error_rate_warning: 0.01
+    error_rate_critical: 0.05
+    latency_p99_warning: 1.0
+    latency_p99_critical: 3.0
+
+  for:
+    pod_not_ready: 1m
+    pod_crashloop: 1m
+    error_rate_warning: 5m
+    error_rate_critical: 3m
+    latency_warning: 5m
+    latency_critical: 3m
+
+  services:
+    hp_backend_core:
+      enabled: true
+      namespace: hp-core
+      istio_namespace: hp-core
+      label_app: hp-backend-core
+      deployment: hp-backend-core
+      istio_destination: hp-backend-core
+
+    hp_backend_booking:
+      enabled: true
+      namespace: hp-core
+      istio_namespace: hp-core
+      label_app: hp-backend-booking
+      deployment: hp-backend-booking
+      istio_destination: hp-backend-booking
+
+    hp_backend_queue:
+      enabled: true
+      namespace: hp-core
+      istio_namespace: hp-core
+      label_app: hp-backend-queue
+      deployment: hp-backend-queue
+      istio_destination: hp-backend-queue
+
+    hp_backend_worker:
+      enabled: true
+      namespace: hp-core
+      istio_namespace: hp-core
+      label_app: hp-backend-worker
+      deployment: hp-backend-worker
+      istio_destination: hp-backend-worker
+
+    aiops_backend:
+      enabled: true
+      namespace: aiops
+      istio_namespace: ""
+      label_app: aiops-backend
+      deployment: aiops-backend
+      istio_destination: ""
+
+    hp_frontend:
+      enabled: false
+
+    hp_workers:
+      enabled: false
+
+# =============================================================================
+# Layer 7 — UX
+# 대상: Faro RUM (hp-frontend Web Vitals)
+# =============================================================================
+layer7_ux:
+  enabled: true
+
+  thresholds:
+    faro_error_rate_warning: 0.05
+    faro_error_rate_critical: 0.10
+
+  for:
+    faro_receiver_down: 3m
+    faro_error_warning: 10m
+    faro_error_critical: 5m

@@ -1,0 +1,28 @@
+# secrets
+.local/
+kustomize/overlays/*/*.env
+*.pem
+*.key
+*.crt
+*.p12
+
+# allow example files
+!kustomize/overlays/*/*.example.env
+!**/*.example.json
+
+# archives
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+
+# editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# misc
+*.bak
+*.tmp
+*.swp

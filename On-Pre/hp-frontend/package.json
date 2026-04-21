@@ -1,0 +1,41 @@
+{
+  "name": "homeplate-web",
+  "version": "1.4.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint"
+  },
+  "dependencies": {
+    "@grafana/faro-web-sdk": "^2.2.3",
+    "@grafana/faro-web-tracing": "^2.2.3",
+    "@opentelemetry/exporter-metrics-otlp-http": "^0.52.1",
+    "@opentelemetry/sdk-metrics": "^1.30.1",
+    "@tanstack/react-query": "^5.90.20",
+    "axios": "^1.13.4",
+    "clsx": "^2.1.1",
+    "dayjs": "^1.11.19",
+    "lucide-react": "^0.563.0",
+    "next": "16.1.6",
+    "qrcode": "^1.5.4",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "recharts": "^2.15.4",
+    "tailwind-merge": "^3.4.0",
+    "zustand": "^5.0.11"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "babel-plugin-react-compiler": "1.0.0",
+    "eslint": "^9",
+    "eslint-config-next": "16.1.6",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}

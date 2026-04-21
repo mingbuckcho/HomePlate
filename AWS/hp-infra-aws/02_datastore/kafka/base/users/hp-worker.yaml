@@ -1,0 +1,19 @@
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaUser
+metadata:
+  name: hp-worker
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: ticketing
+spec:
+  authentication:
+    type: tls
+  authorization:
+    type: simple
+    acls:
+      # Worker → hp.crawl.result produce
+      # Describe: 토픽 메타데이터 조회 (produce 전 파티션 정보 확인)
+      - resource:
+          type: topic
+          name: hp.crawl.result
+        operations: [Write, Describe]

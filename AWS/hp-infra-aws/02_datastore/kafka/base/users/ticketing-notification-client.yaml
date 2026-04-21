@@ -1,0 +1,25 @@
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaUser
+metadata:
+  name: ticketing-notification-client
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: ticketing
+spec:
+  authentication:
+    type: tls
+  authorization:
+    type: simple
+    acls:
+      - resource:
+          type: topic
+          name: ticketing-notification
+        operations: [Read, Write, Describe]
+      - resource:
+          type: topic
+          name: ticketing-notification-dlq
+        operations: [Write, Write, Describe]
+      - resource:
+          type: group
+          name: ticketing-notification-group
+        operations: [Read, Write, Describe]

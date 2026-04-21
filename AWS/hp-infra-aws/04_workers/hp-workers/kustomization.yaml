@@ -1,0 +1,18 @@
+# apps/hp-ingestion/kustomization.yaml
+resources:
+- bootstrap-job.yaml
+- kbo-games-cronjob.yaml
+- kbomarket-goods-discover-cronjob.yaml
+- naver-news-cronjob.yaml
+- reaper-cronjob.yaml
+- worker-deployment.yaml
+- exporter-cronjob.yaml
+- outbox-relay-deployment.yaml
+- slack-deployment.yaml
+- kbo-team-rank-cronjob.yaml
+
+images:
+- name: 681224237958.dkr.ecr.ap-northeast-2.amazonaws.com/hp-ingestion
+  newTag: v0.1.23
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization

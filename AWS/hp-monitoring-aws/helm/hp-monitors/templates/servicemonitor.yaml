@@ -1,0 +1,40 @@
+{{- range .Values.serviceMonitors }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ .name }}
+  namespace: {{ .namespace }}
+  labels:
+    release: {{ $.Values.defaults.release }}
+spec:
+  selector:
+    matchLabels:
+      {{- range $k, $v := .selector }}
+      {{ $k }}: {{ $v }}
+      {{- end }}
+  namespaceSelector:
+    matchNames:
+      - {{ .namespace }}
+  endpoints:
+    - port: {{ .port }}
+      path: {{ .path | default $.Values.defaults.path }}
+      interval: {{ .interval | default $.Values.defaults.interval }}
+      {{- if .auth }}
+      {{- if eq .auth.type "bearer" }}
+      authorization:
+        type: Bearer
+        credentials:
+          name: {{ .auth.secretName }}
+          key: {{ .auth.secretKey }}
+      {{- else if eq .auth.type "basic" }}
+      basicAuth:
+        username:
+          name: {{ .auth.secretName }}
+          key: {{ .auth.usernameKey | default "username" }}
+        password:
+          name: {{ .auth.secretName }}
+          key: {{ .auth.passwordKey | default "password" }}
+      {{- end }}
+      {{- end }}
+{{- end }}

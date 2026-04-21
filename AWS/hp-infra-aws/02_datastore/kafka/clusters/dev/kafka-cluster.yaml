@@ -1,0 +1,55 @@
+apiVersion: kafka.strimzi.io/v1
+kind: Kafka
+metadata:
+  name: ticketing
+  namespace: kafka
+  annotations:
+    strimzi.io/node-pools: enabled
+    strimzi.io/kraft: enabled
+spec:
+  kafka:
+    jvmOptions:
+      javaSystemProperties:
+        - name: javax.net.debug
+          value: "ssl:handshake"   # 또는 "all"로 전체 보기
+    logging:
+      type: inline
+      loggers:
+        # TLS handshake
+        kafka.root.logger.level: "INFO"
+        logger.ssl.name: "org.apache.kafka.common.security.ssl"
+        logger.ssl.level: "DEBUG"
+        logger.ssl_transport.name: "org.apache.kafka.common.network.SslTransportLayer"
+        logger.ssl_transport.level: "DEBUG"
+        # SASL handshake
+        logger.sasl_auth.name: "org.apache.kafka.common.security.authenticator"
+        logger.sasl_auth.level: "DEBUG"
+        logger.sasl_server.name: "org.apache.kafka.common.security.authenticator.SaslServerAuthenticator"
+        logger.sasl_server.level: "DEBUG"
+    version: 4.1.1
+    metadataVersion: 4.1-IV0
+    listeners:
+      - name: plain
+        port: 9092
+        type: internal
+        tls: false
+      - name: tls
+        port: 9093
+        type: internal
+        tls: true
+        authentication:
+          type: tls
+
+    authorization:
+      type: simple
+
+    config:
+      # dev는 브로커 1개 → replication factor 1
+      offsets.topic.replication.factor: 1
+      transaction.state.log.replication.factor: 1
+      transaction.state.log.min.isr: 1
+      default.replication.factor: 1
+      min.insync.replicas: 1
+  entityOperator:
+    topicOperator: {}
+    userOperator: {}

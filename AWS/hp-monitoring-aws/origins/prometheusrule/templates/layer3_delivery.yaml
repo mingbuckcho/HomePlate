@@ -1,0 +1,295 @@
+{{- if .Values.layer3_delivery.enabled }}
+# =============================================================================
+# Layer 3 - Delivery
+# targets: Jenkins, SonarQube, ArgoCD (server/app-controller/repo-server/appset-controller)
+# =============================================================================
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: layer-delivery-rules
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    release: {{ .Values.global.releaseLabel }}
+    layer: delivery
+spec:
+  groups:
+
+    # =========================================================================
+    # GROUP 1. Jenkins
+    # =========================================================================
+    - name: delivery.jenkins
+      rules:
+
+        - alert: JenkinsDown
+          expr: up{job="jenkins"} == 0
+          for: {{ .Values.layer3_delivery.for.jenkins_down }}
+          labels:
+            severity: critical
+            layer: delivery
+            component: jenkins
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Jenkins Down"
+            description: "Jenkins is not responding. CI / execution ."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: JenkinsBuildQueueHighWarning
+          expr: |
+            jenkins_queue_size_value > {{ .Values.layer3_delivery.thresholds.jenkins_queue_warning }}
+          for: {{ .Values.layer3_delivery.for.jenkins_queue_warning }}
+          labels:
+            severity: warning
+            layer: delivery
+            component: jenkins
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Jenkins Build Queue High: {{ "{{" }} $value {{ "}}" }}"
+            description: "Jenkins   {{ "{{" }} $value {{ "}}" }} threshold({{ .Values.layer3_delivery.thresholds.jenkins_queue_warning }}) ."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: JenkinsBuildQueueHighCritical
+          expr: |
+            jenkins_queue_size_value > {{ .Values.layer3_delivery.thresholds.jenkins_queue_critical }}
+          for: {{ .Values.layer3_delivery.for.jenkins_queue_critical }}
+          labels:
+            severity: critical
+            layer: delivery
+            component: jenkins
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Jenkins Build Queue Critical: {{ "{{" }} $value {{ "}}" }}"
+            description: "Jenkins   {{ "{{" }} $value {{ "}}" }}  . executor     ."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: JenkinsExecutorSaturationWarning
+          expr: |
+            (
+              jenkins_executor_in_use_value
+              / clamp_min(jenkins_executor_count_value, 1)
+            ) > {{ .Values.layer3_delivery.thresholds.jenkins_executor_sat_warning }}
+          for: {{ .Values.layer3_delivery.for.jenkins_executor_sat_warning }}
+          labels:
+            severity: warning
+            layer: delivery
+            component: jenkins
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Jenkins Executor Saturation Warning: {{ "{{" }} $value | humanizePercentage {{ "}}" }}"
+            description: "Jenkins executor usage {{ "{{" }} $value | humanizePercentage {{ "}}" }}."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: JenkinsExecutorSaturationCritical
+          expr: |
+            (
+              jenkins_executor_in_use_value
+              / clamp_min(jenkins_executor_count_value, 1)
+            ) > {{ .Values.layer3_delivery.thresholds.jenkins_executor_sat_critical }}
+          for: {{ .Values.layer3_delivery.for.jenkins_executor_sat_critical }}
+          labels:
+            severity: critical
+            layer: delivery
+            component: jenkins
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Jenkins Executor Saturation Critical: {{ "{{" }} $value | humanizePercentage {{ "}}" }}"
+            description: "Jenkins executor   status.   pending status   ."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+    # =========================================================================
+    # GROUP 2. SonarQube
+    # =========================================================================
+    - name: delivery.sonarqube
+      rules:
+
+        - alert: SonarQubeDown
+          expr: up{job="sonarqube"} == 0
+          for: {{ .Values.layer3_delivery.for.sonarqube_down }}
+          labels:
+            severity: critical
+            layer: delivery
+            component: sonarqube
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "SonarQube Down"
+            description: "SonarQube is not responding.     in progress."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: SonarQubeComputeEnginePending
+          expr: |
+            sonarqube_compute_engine_pending_tasks_total > 0
+          for: {{ .Values.layer3_delivery.for.sonarqube_ce_pending }}
+          labels:
+            severity: warning
+            layer: delivery
+            component: sonarqube
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "SonarQube CE Pending Tasks: {{ "{{" }} $value {{ "}}" }}"
+            description: "SonarQube Compute Engine pending  {{ "{{" }} $value {{ "}}" }}. 15       status."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+    # =========================================================================
+    # GROUP 3. ArgoCD
+    # =========================================================================
+    - name: delivery.argocd
+      rules:
+
+        - alert: ArgoCDServerDown
+          expr: up{job="argocd-server-metrics"} == 0
+          for: {{ .Values.layer3_delivery.for.argocd_server_down }}
+          labels:
+            severity: critical
+            layer: delivery
+            component: argocd-server
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "ArgoCD Server Down"
+            description: "ArgoCD Server is not responding. UI  API  ."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: ArgoCDAppControllerDown
+          expr: up{job="argocd-application-controller-metrics"} == 0
+          for: {{ .Values.layer3_delivery.for.argocd_app_controller_down }}
+          labels:
+            severity: critical
+            layer: delivery
+            component: argocd-application-controller
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "ArgoCD Application Controller Down"
+            description: "ArgoCD Application Controller is not responding.      in progress."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: ArgoCDRepoServerDown
+          expr: up{job="argocd-repo-server-metrics"} == 0
+          for: {{ .Values.layer3_delivery.for.argocd_repo_server_down }}
+          labels:
+            severity: critical
+            layer: delivery
+            component: argocd-repo-server
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "ArgoCD Repo Server Down"
+            description: "ArgoCD Repo Server is not responding. Git      ."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: ArgoCDAppSetControllerDown
+          expr: up{job="argocd-applicationset-controller-metrics"} == 0
+          for: {{ .Values.layer3_delivery.for.argocd_appset_controller_down }}
+          labels:
+            severity: warning
+            layer: delivery
+            component: argocd-applicationset-controller
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "ArgoCD ApplicationSet Controller Down"
+            description: "ArgoCD ApplicationSet Controller is not responding. ApplicationSet   / in progress."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: ArgoCDAppNotSyncedWarning
+          expr: |
+            count(
+              argocd_app_info{sync_status!="Synced"}
+            ) > {{ .Values.layer3_delivery.thresholds.argocd_app_not_synced_warning }}
+          for: {{ .Values.layer3_delivery.for.argocd_app_not_synced_warning }}
+          labels:
+            severity: warning
+            layer: delivery
+            component: argocd-application-controller
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "ArgoCD App Not Synced: {{ "{{" }} $value {{ "}}" }}"
+            description: "{{ "{{" }} $value {{ "}}" }} ArgoCD  Synced status ."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: ArgoCDAppNotSyncedCritical
+          expr: |
+            count(
+              argocd_app_info{sync_status!="Synced"}
+            ) > {{ .Values.layer3_delivery.thresholds.argocd_app_not_synced_critical }}
+          for: {{ .Values.layer3_delivery.for.argocd_app_not_synced_critical }}
+          labels:
+            severity: critical
+            layer: delivery
+            component: argocd-application-controller
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "ArgoCD App Not Synced Critical: {{ "{{" }} $value {{ "}}" }}"
+            description: "{{ "{{" }} $value {{ "}}" }} ArgoCD  Synced status .    status."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: ArgoCDAppDegraded
+          expr: |
+            count(
+              argocd_app_info{health_status="Degraded"}
+            ) > 0
+          for: {{ .Values.layer3_delivery.for.argocd_app_degraded }}
+          labels:
+            severity: critical
+            layer: delivery
+            component: argocd-application-controller
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "ArgoCD App Degraded: {{ "{{" }} $value {{ "}}" }}"
+            description: "{{ "{{" }} $value {{ "}}" }} ArgoCD  Degraded(abnormal) status."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: ArgoCDClusterDisconnected
+          expr: argocd_cluster_connection_status == 0
+          for: {{ .Values.layer3_delivery.for.argocd_cluster_disconnected }}
+          labels:
+            severity: critical
+            layer: delivery
+            component: argocd-application-controller
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "ArgoCD Cluster Disconnected: {{ "{{" }} $labels.server {{ "}}" }}"
+            description: "ArgoCD  {{ "{{" }} $labels.server {{ "}}" }} connection .    ."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+{{- end }}

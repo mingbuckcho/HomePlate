@@ -1,0 +1,20 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: crb-hp-breakglass__user-<USERNAME>__cluster-admin
+  annotations:
+    homeplate.io/breakglass: "true"
+    homeplate.io/reason: "INCIDENT_OR_EMERGENCY_ONLY"
+    homeplate.io/ticket: "INC-XXXX"
+    homeplate.io/requester: "<requester@example.com>"
+    homeplate.io/approved-by: "<approver@example.com>"
+    homeplate.io/expires-at: "YYYY-MM-DDThh:mm:ssZ"   # ISO8601 UTC 필수
+    homeplate.io/scope: "cluster-admin"
+subjects:
+  - kind: User
+    name: "<username-or-email-from-idp>"  # 예: user@example.com (권장)
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: cluster-admin  # ⚠️ 최후수단
+  apiGroup: rbac.authorization.k8s.io

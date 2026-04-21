@@ -1,0 +1,24 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - servicemonitor/aiops-backend-sm.yaml
+  - servicemonitor/alloy-collector-sm.yaml
+  - servicemonitor/alloy-logs-sm.yaml
+  - servicemonitor/argocd-applicationset-controller-sm.yaml
+  - servicemonitor/argocd-repo-server-sm.yaml
+  - servicemonitor/aws-load-balancer-controller-sm.yaml
+  - servicemonitor/istio-ingress-sm.yaml
+  - servicemonitor/istiod-sm.yaml
+  - servicemonitor/sonarqube-sm.yaml
+  - servicemonitor/hp-core-backend-servicemonitor.yaml
+  - servicemonitor/mongodb-servicemonitor.yaml
+
+  - podmonitor/kafka-podmonitor.yaml
+
+  - service/argocd-applicationset-controller-metrics-svc.yaml
+  - service/argocd-repo-server-metrics-svc.yaml
+  - service/aws-load-balancer-controller-svc.yaml
+  - service/istio-ingress-metrics-svc.yaml
+
+  - configmap/kafka-metrics-configmap.yaml

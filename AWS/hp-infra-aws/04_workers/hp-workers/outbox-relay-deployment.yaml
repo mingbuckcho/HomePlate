@@ -1,0 +1,81 @@
+# Outbox Relay: MariaDB outbox 테이블 polling → hp.crawl.exported produce
+# 3초마다 outbox 테이블을 읽어 Kafka에 가격변동 이벤트를 전송한다
+# SELECT FOR UPDATE SKIP LOCKED 덕분에 replicas를 늘려도 중복 처리가 없다
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hp-outbox-relay
+  namespace: hp-workers
+  labels:
+    app: hp-outbox-relay
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hp-outbox-relay
+  template:
+    metadata:
+      labels:
+        app: hp-outbox-relay
+    spec:
+      terminationGracePeriodSeconds: 15
+      nodeSelector:
+        nodepool: app
+      volumes:
+        - name: cluster-ca
+          secret:
+            secretName: ticketing-cluster-ca-cert
+            items:
+              - key: ca.crt
+                path: ca.crt
+        - name: user-tls
+          secret:
+            secretName: goods-outbox-relay
+            items:
+              - key: user.crt
+                path: user.crt
+              - key: user.key
+                path: user.key
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: hp-outbox-relay
+          image: "681224237958.dkr.ecr.ap-northeast-2.amazonaws.com/hp-ingestion:v0.1.3"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command: ["python", "-m", "app.outbox_relay"]
+          envFrom:
+            - configMapRef:
+                name: hp-config
+            - secretRef:
+                name: hp-app-secret
+            - secretRef:
+                name: hp-rds-secret
+          volumeMounts:
+            - name: cluster-ca
+              mountPath: /etc/kafka/cluster-ca
+              readOnly: true
+            - name: user-tls
+              mountPath: /etc/kafka/user-tls
+              readOnly: true
+          livenessProbe:
+            exec:
+              command: ["python", "-c", "import app.mariadb_client"]
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "128Mi"

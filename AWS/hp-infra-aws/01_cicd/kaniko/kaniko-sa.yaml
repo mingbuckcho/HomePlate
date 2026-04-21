@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kaniko-sa
+  namespace: cicd
+  annotations:
+    # ECR 창고 문을 열기 위해 AWS IAM Role과 연결하는 핵심 설정
+    eks.amazonaws.com/role-arn: arn:aws:iam::681224237958:role/hp-kaniko-build-role

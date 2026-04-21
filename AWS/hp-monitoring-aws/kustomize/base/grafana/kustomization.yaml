@@ -1,0 +1,23 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - 01-grafana-virtualservice.yaml
+
+generatorOptions:
+  disableNameSuffixHash: true
+  labels:
+    grafana_dashboard: "1"
+
+configMapGenerator:
+  - name: grafana-dashboards-main
+    namespace: observability
+    files:
+      - dashboards/00_overview.json
+      - dashboards/01_infrastructure.json
+      - dashboards/02_platform.json
+      - dashboards/03_delivery.json
+      - dashboards/04_observability.json
+      - dashboards/05_data.json
+      - dashboards/06_application.json
+      - dashboards/07_ux.json

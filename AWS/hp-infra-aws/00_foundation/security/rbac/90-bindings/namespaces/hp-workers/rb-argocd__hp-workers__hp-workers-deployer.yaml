@@ -1,0 +1,13 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rb-argocd__hp-workers__hp-workers-deployer
+  namespace: hp-workers
+subjects:
+  - kind: ServiceAccount
+    name: argocd-application-controller
+    namespace: cicd
+roleRef:
+  kind: Role
+  name: hp-workers-deployer
+  apiGroup: rbac.authorization.k8s.io

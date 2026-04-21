@@ -1,0 +1,59 @@
+# ============================================================
+# Kyverno RBAC 및 접근 제어 보안 정책 모음
+# ============================================================
+
+---
+# 1. Restrict Cluster-Admin – cluster-admin 바인딩 남용 방지
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-cluster-admin-binding
+  annotations:
+    policies.kyverno.io/title: Restrict Cluster-Admin Binding
+    policies.kyverno.io/category: RBAC
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >-
+      cluster-admin ClusterRole은 클러스터의 모든 리소스에 대한
+      완전한 권한을 부여합니다. 이 정책은 cluster-admin 역할을
+      ClusterRoleBinding 또는 RoleBinding에 바인딩하는 것을 차단합니다.
+      시스템 계정(system:)의 바인딩은 허용합니다.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    # ClusterRoleBinding에서 cluster-admin 차단
+    - name: restrict-clusterrolebinding-cluster-admin
+      match:
+        any:
+          - resources:
+              kinds:
+                - ClusterRoleBinding
+      validate:
+        message: "cluster-admin ClusterRole 바인딩은 허용되지 않습니다. 최소 권한 원칙에 따라 필요한 권한만 부여하세요."
+        deny:
+          conditions:
+            all:
+              # roleRef가 cluster-admin인 경우
+              - key: "{{ request.object.roleRef.name }}"
+                operator: Equals
+                value: cluster-admin
+              # system: 계정이 아닌 경우에만 차단
+              - key: "{{ request.object.subjects[].name | [0] }}"
+                operator: AllNotIn
+                value:
+                  - "system:kube-controller-manager"
+                  - "system:kube-scheduler"
+                  - "system:kube-proxy"
+
+    # RoleBinding에서 cluster-admin 차단
+    - name: restrict-rolebinding-cluster-admin
+      match:
+        any:
+          - resources:
+              kinds:
+                - RoleBinding
+      validate:
+        message: "cluster-admin ClusterRole을 RoleBinding으로 바인딩하는 것은 허용되지 않습니다."
+        pattern:
+          roleRef:
+            X(name): "cluster-admin"

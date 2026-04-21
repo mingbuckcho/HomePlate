@@ -1,0 +1,71 @@
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaNodePool
+metadata:
+  name: broker
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: ticketing
+spec:
+  # dev는 broker 1개
+  replicas: 1
+  roles:
+    - broker
+
+  template:
+    kafkaContainer:
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+    pod:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      # ✅ 여기 아래로 “스케줄링 관련”을 전부 모은다
+      tolerations:
+        - key: "dedicated"
+          operator: "Equal"
+          value: "data"
+          effect: "NoSchedule"
+
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: nodepool
+                    operator: In
+                    values:
+                      - data
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    strimzi.io/cluster: ticketing
+                    strimzi.io/name: ticketing-kafka
+                topologyKey: kubernetes.io/hostname
+  storage:
+    type: jbod
+    volumes:
+      - id: 0
+        type: persistent-claim
+        size: 30Gi
+        class: gp3
+        deleteClaim: false
+  resources:
+    requests:
+      memory: 4Gi
+      cpu: "1"
+    limits:
+      memory: 8Gi
+      cpu: "2"
+  jvmOptions:
+    # Heap = limits memory의 절반
+    # 나머지 절반은 OS 페이지 캐시 → Kafka 성능에 직접 영향
+    -Xms: "2048m"
+    -Xmx: "2048m"

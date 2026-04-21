@@ -1,0 +1,19 @@
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaUser
+metadata:
+  name: goods-outbox-relay
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: ticketing
+spec:
+  authentication:
+    type: tls
+  authorization:
+    type: simple
+    acls:
+      # outbox_relay.py → hp.crawl.exported produce
+      # MariaDB outbox 테이블을 polling해서 Kafka에 가격변동 이벤트를 produce한다
+      - resource:
+          type: topic
+          name: hp.crawl.exported
+        operations: [Write, Describe]

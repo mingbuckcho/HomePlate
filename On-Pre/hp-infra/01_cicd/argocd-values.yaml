@@ -1,0 +1,70 @@
+global:
+  nodeSelector:
+    nodepool: cicd 
+  tolerations:
+    - key: "dedicated"
+      operator: "Equal"
+      value: "cicd"
+      effect: "NoSchedule"
+
+# 1. Redis 스토리지 주입 (AWS EBS 활용)
+redis:
+  enabled: true
+  persistence:
+    enabled: true
+    storageClass: "gp3" # AWS EKS의 기본 고성능 SSD 스토리지 클래스
+    size: 5Gi
+  resources:
+    limits:
+      cpu: "200m"
+      memory: "256Mi"
+
+# 2. 서버 설정 및 ALB Ingress 연동
+server:
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+      additionalLabels:
+        release: kps
+  extraArgs:
+    - --insecure
+  service:
+    # [수정] NodePort 제거. 내부 통신용 ClusterIP로 변경 (보안 강화)
+    type: ClusterIP 
+  
+  # [추가] AWS ALB를 통해 외부(GitHub Webhook, UI 접속)와 통신하기 위한 설정
+  ingress:
+    enabled: true
+    annotations:
+      kubernetes.io/ingress.class: alb
+      alb.ingress.kubernetes.io/scheme: internet-facing # 외부 접속용 (Public Subnet 위치)
+      alb.ingress.kubernetes.io/target-type: ip
+      # [나중에 입력] AWS Certificate Manager에서 발급받은 SSL 인증서 ARN
+      alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:ap-northeast-2:XXXXXXXXXXXX:certificate/XXXXXX"
+      alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS":443}]'
+      alb.ingress.kubernetes.io/actions.ssl-redirect: '{"Type": "redirect", "RedirectConfig": { "Protocol": "HTTPS", "Port": "443", "StatusCode": "HTTP_301"}}'
+    hosts:
+      # [나중에 입력] 실제 사용할 도메인 주소 (예: argocd.homeplate.com)
+      - argocd.your-domain.com
+    paths:
+      - /
+
+# 3. 리소스 최적화 (기존 설정 유지 및 정제)
+controller:
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+      additionalLabels:
+        release: kps
+  resources:
+    limits:
+      cpu: "1000m"
+      memory: "2Gi"
+
+repoServer:
+  resources:
+    limits:
+      cpu: "500m"
+      memory: "512Mi"

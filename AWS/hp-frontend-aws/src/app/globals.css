@@ -1,0 +1,129 @@
+@import "tailwindcss";
+
+/* =============================================================================
+   HOMEPLATE — 다크 + 레드 기본, 라이트는 테마 전환 시
+   ============================================================================= */
+
+:root {
+  /* Base (다크 기본) */
+  --background: #0a0a0a;
+  --foreground: rgba(255, 255, 255, 0.95);
+
+  /* Page */
+  --page-bg: #050505;
+  --page-bg-footer: #030303;
+  --surface: rgba(255, 255, 255, 0.06);
+  --surface-solid: #141414;
+  --surface-hover: rgba(255, 255, 255, 0.1);
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-focus: rgba(255, 255, 255, 0.15);
+
+  /* Text (가독성: muted/secondary도 테마별로 확실히 보이도록) */
+  --text-primary: rgba(255, 255, 255, 0.98);
+  --text-secondary: rgba(255, 255, 255, 0.82);
+  --text-muted: rgba(255, 255, 255, 0.68);
+
+  /* Red accent (다크·레드 포인트) */
+  --accent: #e31b23;
+  --accent-hover: #f0444c;
+  --accent-muted: rgba(227, 27, 35, 0.2);
+  --field: #2d5a27;
+  --field-muted: rgba(45, 90, 39, 0.2);
+
+  /* Brand */
+  --font-sans-kr:
+    "Noto Sans KR", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+}
+
+/* Light theme (테마 토글로 전환 시) */
+[data-theme="light"] {
+  --background: #f8f7f4;
+  --foreground: #1a1a1a;
+
+  --page-bg: #f5f4f0;
+  --page-bg-footer: #ebeae6;
+  --surface: rgba(255, 255, 255, 0.85);
+  --surface-solid: #ffffff;
+  --surface-hover: rgba(255, 255, 255, 0.95);
+  --border-subtle: rgba(0, 0, 0, 0.06);
+  --border-focus: rgba(0, 0, 0, 0.12);
+
+  --text-primary: #1a1a1a;
+  --text-secondary: #404040;
+  --text-muted: #525252;
+
+  --accent: #c41e3a;
+  --accent-hover: #a01830;
+  --accent-muted: rgba(196, 30, 58, 0.12);
+  --field: #2d5a27;
+  --field-muted: rgba(45, 90, 39, 0.12);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--page-bg);
+  color: var(--foreground);
+  font-family: var(--font-sans-kr);
+  font-feature-settings: "ss01", "ss02";
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Card (라이트: 밝은 카드, 다크: 살짝 올라온 면) */
+.card-soft {
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 1rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+[data-theme="dark"] .card-soft {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+.card-soft:hover {
+  background: var(--surface-hover);
+}
+
+/* Input base (테마 공통) */
+.input-base {
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+}
+.input-base::placeholder {
+  color: var(--text-muted);
+}
+.input-base:focus {
+  outline: none;
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 2px var(--accent-muted);
+}
+
+/* Hero outline text (BEYOND THE OUTFIELD) */
+.hero-outline-text {
+  -webkit-text-stroke: 1px var(--accent);
+  color: transparent;
+}
+[data-theme="light"] .hero-outline-text {
+  -webkit-text-stroke: 1px rgba(0, 0, 0, 0.2);
+}
+
+/* 챗봇 패널 열림 애니메이션 (슬라이드 업 + 페이드) */
+@keyframes chatbot-open {
+  from {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-chatbot-open {
+  animation: chatbot-open 0.35s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}

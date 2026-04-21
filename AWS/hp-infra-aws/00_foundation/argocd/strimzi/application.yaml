@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: strimzi-kafka-operator
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - chart: strimzi-kafka-operator
+      repoURL: https://strimzi.io/charts/
+      targetRevision: 0.51.0
+      helm:
+        valueFiles:
+          - $values/02_datastore/kafka/operator/values.yaml
+    - repoURL: https://github.com/homeplate-project/hp-infra-aws.git
+      targetRevision: HEAD
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kafka
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

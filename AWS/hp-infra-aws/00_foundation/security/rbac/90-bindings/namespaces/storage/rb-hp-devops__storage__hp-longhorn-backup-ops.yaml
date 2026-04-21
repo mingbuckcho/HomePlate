@@ -1,0 +1,13 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rb-hp-devops__storage__hp-longhorn-backup-ops
+  namespace: storage
+subjects:
+  - kind: Group
+    name: hp-devops
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: hp-longhorn-backup-ops
+  apiGroup: rbac.authorization.k8s.io

@@ -1,0 +1,161 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysqld-exporter-master
+  namespace: observability
+  labels:
+    app: mysqld-exporter-master
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysqld-exporter-master
+  template:
+    metadata:
+      labels:
+        app: mysqld-exporter-master
+    spec:
+      nodeSelector:
+        nodepool: obs
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: obs
+          effect: NoSchedule
+      containers:
+        - name: mysqld-exporter
+          image: prom/mysqld-exporter:v0.17.2
+          args:
+            - --mysqld.address=hp-rds-master.chemcscc2ik6.ap-northeast-2.rds.amazonaws.com:3306
+            - --mysqld.username=exporter
+          env:
+            - name: MYSQLD_EXPORTER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mysqld-exporter-master-auth
+                  key: MYSQLD_EXPORTER_PASSWORD
+          ports:
+            - name: http
+              containerPort: 9104
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysqld-exporter-master
+  namespace: observability
+  labels:
+    app: mysqld-exporter-master
+spec:
+  selector:
+    app: mysqld-exporter-master
+  ports:
+    - name: http
+      port: 9104
+      targetPort: http
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: mysqld-exporter-master
+  namespace: observability
+  labels:
+    release: kps
+spec:
+  selector:
+    matchLabels:
+      app: mysqld-exporter-master
+  namespaceSelector:
+    matchNames:
+      - observability
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 60s
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysqld-exporter-replica
+  namespace: observability
+  labels:
+    app: mysqld-exporter-replica
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysqld-exporter-replica
+  template:
+    metadata:
+      labels:
+        app: mysqld-exporter-replica
+    spec:
+      nodeSelector:
+        nodepool: obs
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: obs
+          effect: NoSchedule
+      containers:
+        - name: mysqld-exporter
+          image: prom/mysqld-exporter:v0.17.2
+          args:
+            - --mysqld.address=hp-rds-replica.chemcscc2ik6.ap-northeast-2.rds.amazonaws.com:3306
+            - --mysqld.username=exporter
+          env:
+            - name: MYSQLD_EXPORTER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mysqld-exporter-replica-auth
+                  key: MYSQLD_EXPORTER_PASSWORD
+          ports:
+            - name: http
+              containerPort: 9104
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysqld-exporter-replica
+  namespace: observability
+  labels:
+    app: mysqld-exporter-replica
+spec:
+  selector:
+    app: mysqld-exporter-replica
+  ports:
+    - name: http
+      port: 9104
+      targetPort: http
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: mysqld-exporter-replica
+  namespace: observability
+  labels:
+    release: kps
+spec:
+  selector:
+    matchLabels:
+      app: mysqld-exporter-replica
+  namespaceSelector:
+    matchNames:
+      - observability
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 60s

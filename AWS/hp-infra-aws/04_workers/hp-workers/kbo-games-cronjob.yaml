@@ -1,0 +1,83 @@
+# 하루 1번 CRAWL_KBO_GAMES 잡을 등록한다
+# 경기 일정은 분 단위 변동이 적어 일 단위 갱신으로 충분하다
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: hp-kbo-games
+  namespace: hp-workers
+  labels:
+    app: hp-kbo-games
+spec:
+  # 매일 05:00 실행
+  schedule: "0 5 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          nodeSelector:
+            nodepool: app
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+          containers:
+            - name: hp-kbo-games
+              image: "681224237958.dkr.ecr.ap-northeast-2.amazonaws.com/hp-ingestion:v0.1.3"
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                seccompProfile:
+                  type: RuntimeDefault
+              command:
+                - python
+                - -c
+                - |
+                  from app.mongo_client import get_db, utc_now
+                  from app.config import KBO_SCHEDULE_API_URL, KBO_SCHEDULE_SEASON
+                  from datetime import timedelta
+                  db  = get_db()
+                  now = utc_now()
+                  result = db.crawl_jobs.update_one(
+                    {
+                      "type":   "CRAWL_KBO_GAMES",
+                      "status": {"$in": ["PENDING", "RUNNING"]},
+                    },
+                    {"$setOnInsert": {
+                      "type":      "CRAWL_KBO_GAMES",
+                      "status":    "PENDING",
+                      "priority":  85,
+                      "payload":   {
+                        "url": KBO_SCHEDULE_API_URL,
+                        "seasonId": KBO_SCHEDULE_SEASON,
+                      },
+                      "attempts":  0,
+                      "nextRunAt": now + timedelta(seconds=1),
+                      "createdAt": now,
+                      "updatedAt": now,
+                    }},
+                    upsert=True,
+                  )
+                  if result.upserted_id:
+                    print("[hp-kbo-games-cronjob] 잡 등록 완료")
+                  else:
+                    print("[hp-kbo-games-cronjob] 이미 처리 중, 건너뜀")
+              envFrom:
+                - secretRef:
+                    name: hp-app-secret
+                - configMapRef:
+                    name: hp-config
+              resources:
+                requests:
+                  cpu: "50m"
+                  memory: "64Mi"
+                limits:
+                  cpu: "100m"
+                  memory: "128Mi"
+          restartPolicy: OnFailure

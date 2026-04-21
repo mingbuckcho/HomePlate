@@ -1,0 +1,30 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hp-backend
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/homeplate-project/hp-infra-aws.git
+    targetRevision: HEAD
+    path: 03_core_apps/hp-app # 👈 백엔드 매니페스트가 있는 경로
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: hp-core # 👈 백엔드가 배포될 네임스페이스
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+  ignoreDifferences:
+  - group: apps
+    kind: Deployment
+    jsonPointers:
+    - /spec/replicas # 복제본 개수 차이는 무시해줘!
+  - group: networking.istio.io
+    kind: VirtualService
+    jsonPointers:
+    - /spec/http/2/route/0/weight
+    - /spec/http/2/route/1/weight

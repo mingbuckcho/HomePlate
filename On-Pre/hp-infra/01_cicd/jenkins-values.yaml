@@ -1,0 +1,76 @@
+controller:
+  # 1. 노드 배치 설정 (특정 호스트 의존성 제거)
+  nodeSelector:
+    nodepool: cicd
+  customLabels:        # [추가] 전체 리소스 식별용
+    release: kps
+  tolerations:
+    - key: "dedicated"
+      operator: "Equal"
+      value: "cicd"
+      effect: "NoSchedule"
+  prometheus:
+    enabled: true
+    serviceMonitorAdditionalLabels:
+      release: kps
+
+  # 2. 네트워크 설정 (NodePort -> ALB Ingress)
+  serviceType: ClusterIP # [수정] 내부 통신용으로 변경
+  servicePort: 8080
+  # nodePort: 32080 -> [삭제] ALB를 사용하므로 더 이상 필요 없음
+
+  # 3. ALB Ingress 설정 추가
+  ingress:
+    enabled: true
+    annotations:
+      kubernetes.io/ingress.class: alb
+      alb.ingress.kubernetes.io/scheme: internet-facing
+      alb.ingress.kubernetes.io/target-type: ip
+      # [나중에 입력] AWS ACM에서 발급받은 인증서 ARN
+      alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:ap-northeast-2:XXXXXXXXXXXX:certificate/XXXXXX"
+      alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS":443}]'
+      alb.ingress.kubernetes.io/actions.ssl-redirect: '{"Type": "redirect", "RedirectConfig": { "Protocol": "HTTPS", "Port": "443", "StatusCode": "HTTP_301"}}'
+    hostName: jenkins.your-domain.com # [나중에 입력] 실제 사용할 도메인
+
+  # 4. 보안 권한 (IRSA 적용 - ECR/S3 접근의 핵심)
+  serviceAccount:
+    create: true # [수정] AWS 권한 주입을 위해 새로 생성
+    name: hp-jenkins-sa
+    annotations:
+      # [나중에 입력] ECR 푸시 및 S3 접근 권한을 가진 IAM Role의 ARN
+      eks.amazonaws.com/role-arn: "arn:aws:iam::XXXXXXXXXXXX:role/jenkins-iam-role"
+
+  # 5. AWS 연동 필수 플러그인 추가
+  installPlugins:
+    - kubernetes
+    - workflow-aggregator
+    - git
+    - configuration-as-code
+    - amazon-ecr # [추가] ECR 연동 필수 플러그인
+    - aws-credentials # [추가] AWS 인증 정보 관리
+    - pipeline-aws # [추가] 파이프라인에서 AWS 서비스 사용용
+
+  # 6. 스토리지 설정 (AWS EBS gp3 주입)
+  persistence:
+    enabled: true
+    storageClass: "gp3" # [추가] AWS 고성능 SSD 스토리지
+    size: "50Gi" # 온프레미스 데이터 복원 공간 확보
+
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "1000m"
+      memory: "2Gi"
+
+# 7. 빌드 에이전트(Agent) 설정
+agent:
+  enabled: true
+  nodeSelector:
+    nodepool: cicd
+  tolerations:
+    - key: "dedicated"
+      operator: "Equal"
+      value: "cicd"
+      effect: "NoSchedule"

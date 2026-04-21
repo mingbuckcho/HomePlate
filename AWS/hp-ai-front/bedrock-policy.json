@@ -1,0 +1,13 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["bedrock:InvokeModel"],
+      "Resource": [
+        "arn:aws:bedrock:ap-northeast-2::foundation-model/*",
+        "arn:aws:bedrock:ap-northeast-2:681224237958:inference-profile/*"
+      ]
+    }
+  ]
+}

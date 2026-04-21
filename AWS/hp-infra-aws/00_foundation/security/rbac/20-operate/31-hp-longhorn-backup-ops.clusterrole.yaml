@@ -1,0 +1,22 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: hp-longhorn-backup-ops
+rules:
+  - apiGroups: ["longhorn.io"]
+    resources:
+      - snapshots
+      - backups
+      - backupvolumes
+      - backuptargets
+      - backupbackingimages
+    verbs: ["get","list","watch","create","update","patch","delete"]
+  - apiGroups: ["longhorn.io"]
+    resources:
+      - snapshots/status
+      - backups/status
+      - backupvolumes/status
+    verbs: ["get","list","watch"]
+  - apiGroups: [""]
+    resources: ["pods","pods/log","events"]
+    verbs: ["get","list","watch"]

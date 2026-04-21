@@ -1,0 +1,23 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: hp-cert-manager-ops
+  labels:
+    homeplate.io/domain: cert-manager
+    homeplate.io/risk: medium
+rules:
+  - apiGroups: ["cert-manager.io"]
+    resources: ["certificates","certificaterequests","orders","challenges"]
+    verbs: ["get","list","watch","create","update","patch","delete"]
+
+  - apiGroups: ["cert-manager.io"]
+    resources: ["certificates/status","certificaterequests/status","orders/status","challenges/status"]
+    verbs: ["get","list","watch"]
+
+  - apiGroups: ["apps"]
+    resources: ["deployments","replicasets"]
+    verbs: ["get","list","watch","update","patch"]
+
+  - apiGroups: [""]
+    resources: ["pods","pods/log","services","endpoints","events","configmaps","secrets"]
+    verbs: ["get","list","watch"]

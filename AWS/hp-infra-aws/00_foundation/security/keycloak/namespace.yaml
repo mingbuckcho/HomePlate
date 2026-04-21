@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: keycloak
+  annotations:
+    # 가장 먼저 생성되어야 합니다.
+    # 네임스페이스가 없으면 그 안의 모든 리소스 생성이 실패합니다.
+    argocd.argoproj.io/sync-wave: "-5"
+  labels:
+    app.kubernetes.io/part-of: keycloak

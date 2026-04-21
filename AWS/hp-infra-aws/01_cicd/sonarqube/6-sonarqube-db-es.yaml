@@ -1,0 +1,16 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: sonarqube-db-es
+  namespace: cicd
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: sonarqube-db-store # 🔵 1단계에서 만든 SecretStore 이름과 일치시켜야 함
+    kind: SecretStore        # 🔵 ClusterSecretStore가 아닌 SecretStore로 명시
+  target:
+    name: sonarqube-db-secret # 쿠버네티스에 최종 생성될 시크릿 이름
+    creationPolicy: Owner
+  dataFrom:
+  - extract:
+      key: prod/sonarqube/db

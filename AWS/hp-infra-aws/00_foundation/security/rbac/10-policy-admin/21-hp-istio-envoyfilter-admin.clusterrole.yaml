@@ -1,0 +1,11 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: hp-istio-envoyfilter-admin
+  labels:
+    homeplate.io/domain: istio
+    homeplate.io/risk: high
+rules:
+  - apiGroups: ["networking.istio.io"]
+    resources: ["envoyfilters"]
+    verbs: ["get","list","watch","create","update","patch","delete"]

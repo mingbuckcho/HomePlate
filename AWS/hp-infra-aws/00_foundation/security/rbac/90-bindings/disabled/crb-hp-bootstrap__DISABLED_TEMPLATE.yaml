@@ -1,0 +1,85 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: crb-hp-infra__hp-bootstrap-admin
+  annotations:
+    homeplate.io/bootstrap: "true"
+    homeplate.io/reason: "INSTALL_OR_CHANGE_TICKET_REQUIRED"
+    homeplate.io/expires-at: "YYYY-MM-DDThh:mm:ssZ"
+subjects:
+  - kind: Group
+    name: hp-infra
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: hp-bootstrap-admin
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: crb-hp-backend__hp-bootstrap-admin
+  annotations:
+    homeplate.io/bootstrap: "true"
+    homeplate.io/reason: "INSTALL_OR_CHANGE_TICKET_REQUIRED"
+    homeplate.io/expires-at: "YYYY-MM-DDThh:mm:ssZ"
+subjects:
+  - kind: Group
+    name: hp-backend
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: hp-bootstrap-admin
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: crb-hp-devops__hp-bootstrap-admin
+  annotations:
+    homeplate.io/bootstrap: "true"
+    homeplate.io/reason: "INSTALL_OR_CHANGE_TICKET_REQUIRED"
+    homeplate.io/expires-at: "YYYY-MM-DDThh:mm:ssZ"
+subjects:
+  - kind: Group
+    name: hp-devops
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: hp-bootstrap-admin
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: crb-hp-datasec__hp-bootstrap-admin
+  annotations:
+    homeplate.io/bootstrap: "true"
+    homeplate.io/reason: "INSTALL_OR_CHANGE_TICKET_REQUIRED"
+    homeplate.io/expires-at: "YYYY-MM-DDThh:mm:ssZ"
+subjects:
+  - kind: Group
+    name: hp-datasec
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: hp-bootstrap-admin
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: crb-hp-sre__hp-bootstrap-admin
+  annotations:
+    homeplate.io/bootstrap: "true"
+    homeplate.io/reason: "INSTALL_OR_CHANGE_TICKET_REQUIRED"
+    homeplate.io/expires-at: "YYYY-MM-DDThh:mm:ssZ"
+subjects:
+  - kind: Group
+    name: hp-sre
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: hp-bootstrap-admin
+  apiGroup: rbac.authorization.k8s.io
+

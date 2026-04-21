@@ -1,0 +1,137 @@
+yamlApplicationConfig:
+  auth:
+    type: OAUTH2
+    oauth2:
+      client:
+        keycloak:
+          clientId: kafka
+          clientSecret: ${OAUTH_CLIENT_SECRET}
+          scope: openid,profile,email
+          issuer-uri: https://auth.homeplate.site/realms/homeplate
+          user-name-attribute: preferred_username
+          client-name: keycloak
+          provider: keycloak
+          custom-params:
+            type: oauth
+            roles-field: groups
+
+  rbac:
+    roles:
+      - name: kafka-ui-admin
+        clusters:
+          - ticketing
+        subjects:
+          - provider: oauth
+            type: role
+            value: "hp-datasec"
+        permissions:
+          - resource: applicationconfig
+            actions: all
+          - resource: clusterconfig
+            actions: all
+          - resource: topic
+            value: ".*"
+            actions: all
+          - resource: consumer
+            value: ".*"
+            actions: all
+          - resource: schema
+            value: ".*"
+            actions: all
+          - resource: connect
+            value: ".*"
+            actions: all
+          - resource: acl
+            value: ".*"
+            actions: all
+
+      - name: kafka-ui-readonly
+        clusters:
+          - ticketing
+        subjects:
+          - provider: oauth
+            type: role
+            value: "hp-infra"
+          - provider: oauth
+            type: role
+            value: "hp-devops"
+          - provider: oauth
+            type: role
+            value: "hp-sre"
+          - provider: oauth
+            type: role
+            value: "hp-backend"
+        permissions:
+          - resource: applicationconfig
+            actions:
+              - view
+          - resource: clusterconfig
+            actions:
+              - view
+          - resource: topic
+            value: ".*"
+            actions:
+              - view
+              - messages_read
+          - resource: consumer
+            value: ".*"
+            actions:
+              - view
+          - resource: schema
+            value: ".*"
+            actions:
+              - view
+          - resource: connect
+            value: ".*"
+            actions:
+              - view
+          - resource: acl
+            value: ".*"
+            actions:
+              - view
+
+envs:
+  config:
+    KAFKA_CLUSTERS_0_NAME: ticketing
+    KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: ticketing-kafka-bootstrap.kafka.svc.cluster.local:9093
+    KAFKA_CLUSTERS_0_PROPERTIES_SECURITY_PROTOCOL: SSL
+    KAFKA_CLUSTERS_0_PROPERTIES_SSL_KEYSTORE_LOCATION: /etc/kafka/user-tls/user.p12
+    KAFKA_CLUSTERS_0_PROPERTIES_SSL_KEYSTORE_TYPE: PKCS12
+    KAFKA_CLUSTERS_0_PROPERTIES_SSL_TRUSTSTORE_LOCATION: /etc/kafka/cluster-ca/ca.p12
+    KAFKA_CLUSTERS_0_PROPERTIES_SSL_TRUSTSTORE_TYPE: PKCS12
+    SERVER_FORWARD_HEADERS_STRATEGY: framework
+  secretMappings:
+    KAFKA_CLUSTERS_0_PROPERTIES_SSL_KEYSTORE_PASSWORD:
+      name: kafka-ui
+      keyName: user.password
+    KAFKA_CLUSTERS_0_PROPERTIES_SSL_TRUSTSTORE_PASSWORD:
+      name: ticketing-cluster-ca-cert
+      keyName: ca.password
+    OAUTH_CLIENT_SECRET:
+      name: kafka-ui-oauth
+      keyName: client-secret
+
+volumeMounts:
+  - name: cluster-ca
+    mountPath: /etc/kafka/cluster-ca
+    readOnly: true
+  - name: user-tls
+    mountPath: /etc/kafka/user-tls
+    readOnly: true
+
+volumes:
+  - name: cluster-ca
+    secret:
+      secretName: ticketing-cluster-ca-cert
+  - name: user-tls
+    secret:
+      secretName: kafka-ui
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+
+service:
+  type: ClusterIP

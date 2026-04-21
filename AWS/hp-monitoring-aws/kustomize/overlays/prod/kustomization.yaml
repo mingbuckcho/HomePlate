@@ -1,0 +1,58 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+generatorOptions:
+  disableNameSuffixHash: true
+
+secretGenerator:
+  - name: jenkins-monitoring-auth
+    envs:
+      - jenkins-auth.env
+
+  - name: sonarqube-monitoring-auth
+    envs:
+      - sonarqube-auth.env
+
+  - name: mysqld-exporter-master-auth
+    envs:
+      - mysqld-exporter-master-auth.env
+
+  - name: mysqld-exporter-replica-auth
+    envs:
+      - mysqld-exporter-replica-auth.env
+
+patches:
+  - target:
+      kind: Secret
+      name: jenkins-monitoring-auth
+    patch: |-
+      - op: add
+        path: /metadata/namespace
+        value: cicd
+
+  - target:
+      kind: Secret
+      name: sonarqube-monitoring-auth
+    patch: |-
+      - op: add
+        path: /metadata/namespace
+        value: cicd
+
+  - target:
+      kind: Secret
+      name: mysqld-exporter-master-auth
+    patch: |-
+      - op: add
+        path: /metadata/namespace
+        value: observability
+
+  - target:
+      kind: Secret
+      name: mysqld-exporter-replica-auth
+    patch: |-
+      - op: add
+        path: /metadata/namespace
+        value: observability

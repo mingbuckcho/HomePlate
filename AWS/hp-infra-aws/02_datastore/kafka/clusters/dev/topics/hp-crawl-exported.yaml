@@ -1,0 +1,16 @@
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: hp-crawl-exported
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: ticketing
+spec:
+  topicName: hp.crawl.exported
+  # product_id를 key로 사용하므로 partition이 여러 개여도 같은 상품은 같은 파티션으로 간다
+  partitions: 3
+  replicas: 1
+  config:
+    # 7일: 슬랙 알림 재처리를 위한 여유 기간
+    retention.ms: "604800000"
+    compression.type: lz4

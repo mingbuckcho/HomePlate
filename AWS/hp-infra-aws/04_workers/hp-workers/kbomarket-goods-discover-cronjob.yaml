@@ -1,0 +1,81 @@
+# 하루 1번 DISCOVER_KBOMARKET_GOODS 잡을 등록한다
+# 카테고리는 자주 바뀌지 않으므로 하루 1번으로 충분하다
+# Discover 잡이 실행되면 카테고리별 CRAWL_KBOMARKET_GOODS 잡이 자동 등록된다
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: hp-kbomarket-goods-discover
+  namespace: hp-workers
+  labels:
+    app: hp-kbomarket-goods-discover
+spec:
+  # 매일 오전 6시에 실행한다
+  schedule: "0 6 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          nodeSelector:
+            nodepool: app
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+          containers:
+            - name: hp-kbomarket-goods-discover
+              image: "681224237958.dkr.ecr.ap-northeast-2.amazonaws.com/hp-ingestion:v0.1.3"
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                seccompProfile:
+                  type: RuntimeDefault
+              command:
+                - python
+                - -c
+                - |
+                  from app.mongo_client import get_db, utc_now
+                  from app.config import KBOMARKET_ROOT_URL
+                  from datetime import timedelta
+                  db  = get_db()
+                  now = utc_now()
+                  result = db.crawl_jobs.update_one(
+                    {
+                      "type":   "DISCOVER_KBOMARKET_GOODS",
+                      "status": {"$in": ["PENDING", "RUNNING"]},
+                    },
+                    {"$setOnInsert": {
+                      "type":      "DISCOVER_KBOMARKET_GOODS",
+                      "status":    "PENDING",
+                      "priority":  100,
+                      "payload":   {"url": KBOMARKET_ROOT_URL},
+                      "attempts":  0,
+                      "nextRunAt": now + timedelta(seconds=1),
+                      "createdAt": now,
+                      "updatedAt": now,
+                    }},
+                    upsert=True,
+                  )
+                  if result.upserted_id:
+                    print("[hp-kbomarket-goods-discover-cronjob] 잡 등록 완료")
+                  else:
+                    print("[hp-kbomarket-goods-discover-cronjob] 이미 처리 중, 건너뜀")
+              envFrom:
+                - secretRef:
+                    name: hp-app-secret
+                - configMapRef:
+                    name: hp-config
+              resources:
+                requests:
+                  cpu: "50m"
+                  memory: "64Mi"
+                limits:
+                  cpu: "100m"
+                  memory: "128Mi"
+          restartPolicy: OnFailure

@@ -1,0 +1,25 @@
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: jenkins
+  namespace: cicd
+spec:
+  hosts:
+    - jenkins.homeplate.site
+  gateways:
+    - istio-system/homeplate-gateway
+  http:
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: jenkins
+            port:
+              number: 8080
+      headers:
+        request:
+          set:
+            X-Forwarded-Proto: "https"
+            X-Forwarded-Port: "443"
+            X-Forwarded-Host: "jenkins.homeplate.site"

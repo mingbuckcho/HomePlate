@@ -1,0 +1,18 @@
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: hp-crawl-result
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: ticketing
+spec:
+  topicName: hp.crawl.result
+  partitions: 3
+  # prod는 브로커 3개 → replicas 3
+  replicas: 3
+  config:
+    retention.ms: "86400000"
+    compression.type: lz4
+    # 3개 중 2개 이상에 저장되어야 produce 성공 처리
+    # kafka_client.py acks=all과 함께 데이터 유실 방지
+    min.insync.replicas: "2"

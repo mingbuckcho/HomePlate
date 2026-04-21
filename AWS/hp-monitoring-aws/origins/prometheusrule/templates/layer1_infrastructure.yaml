@@ -1,0 +1,403 @@
+{{- if .Values.layer1_infrastructure.enabled }}
+# =============================================================================
+# Layer 1 - Infrastructure
+# targets: apiserver, kubelet, coredns, node-exporter, kube-state-metrics, PVC/PV
+# =============================================================================
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: layer-infrastructure-rules
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    release: {{ .Values.global.releaseLabel }}
+    layer: infrastructure
+spec:
+  groups:
+
+    # =========================================================================
+    # GROUP 1. Node status
+    # =========================================================================
+    - name: infrastructure.node
+      rules:
+
+        - alert: NodeNotReady
+          expr: kube_node_status_condition{condition="Ready",status="true"} == 0
+          for: {{ .Values.layer1_infrastructure.for.node_not_ready }}
+          labels:
+            severity: critical
+            layer: infrastructure
+            component: kube-state-metrics
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Node NotReady: {{ "{{" }} $labels.node {{ "}}" }}"
+            description: "node {{ "{{" }} $labels.node {{ "}}" }} NotReady status.  node pod   ."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: NodeCpuHighWarning
+          expr: |
+            (
+              1 - avg by (instance) (
+                rate(node_cpu_seconds_total{mode="idle"}[5m])
+              )
+            ) > {{ .Values.layer1_infrastructure.thresholds.node_cpu_warning }}
+          for: {{ .Values.layer1_infrastructure.for.node_cpu_warning }}
+          labels:
+            severity: warning
+            layer: infrastructure
+            component: node-exporter
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Node CPU Warning: {{ "{{" }} $labels.instance {{ "}}" }}"
+            description: "node {{ "{{" }} $labels.instance {{ "}}" }} CPU usage {{ "{{" }} $value | humanizePercentage {{ "}}" }}. threshold: {{ .Values.layer1_infrastructure.thresholds.node_cpu_warning | mulf 100 }}%"
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: NodeCpuHighCritical
+          expr: |
+            (
+              1 - avg by (instance) (
+                rate(node_cpu_seconds_total{mode="idle"}[5m])
+              )
+            ) > {{ .Values.layer1_infrastructure.thresholds.node_cpu_critical }}
+          for: {{ .Values.layer1_infrastructure.for.node_cpu_critical }}
+          labels:
+            severity: critical
+            layer: infrastructure
+            component: node-exporter
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Node CPU Critical: {{ "{{" }} $labels.instance {{ "}}" }}"
+            description: "node {{ "{{" }} $labels.instance {{ "}}" }} CPU usage {{ "{{" }} $value | humanizePercentage {{ "}}" }}. Immediate action required."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: NodeMemoryHighWarning
+          expr: |
+            (
+              1 - (
+                node_memory_MemAvailable_bytes
+                / node_memory_MemTotal_bytes
+              )
+            ) > {{ .Values.layer1_infrastructure.thresholds.node_memory_warning }}
+          for: {{ .Values.layer1_infrastructure.for.node_memory_warning }}
+          labels:
+            severity: warning
+            layer: infrastructure
+            component: node-exporter
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Node Memory Warning: {{ "{{" }} $labels.instance {{ "}}" }}"
+            description: "node {{ "{{" }} $labels.instance {{ "}}" }}  usage {{ "{{" }} $value | humanizePercentage {{ "}}" }}."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: NodeMemoryHighCritical
+          expr: |
+            (
+              1 - (
+                node_memory_MemAvailable_bytes
+                / node_memory_MemTotal_bytes
+              )
+            ) > {{ .Values.layer1_infrastructure.thresholds.node_memory_critical }}
+          for: {{ .Values.layer1_infrastructure.for.node_memory_critical }}
+          labels:
+            severity: critical
+            layer: infrastructure
+            component: node-exporter
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Node Memory Critical: {{ "{{" }} $labels.instance {{ "}}" }}"
+            description: "node {{ "{{" }} $labels.instance {{ "}}" }}  usage {{ "{{" }} $value | humanizePercentage {{ "}}" }}. OOM ."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        # [FIX] fstype  + mountpoint
+        - alert: NodeDiskHighWarning
+          expr: |
+            (
+              1 - (
+                node_filesystem_avail_bytes{
+                  fstype!~"tmpfs|overlay|squashfs|fuse.*",
+                  mountpoint!~"/boot.*|/run.*|/dev.*"
+                }
+                / node_filesystem_size_bytes{
+                  fstype!~"tmpfs|overlay|squashfs|fuse.*",
+                  mountpoint!~"/boot.*|/run.*|/dev.*"
+                }
+              )
+            ) > {{ .Values.layer1_infrastructure.thresholds.node_disk_warning }}
+          for: {{ .Values.layer1_infrastructure.for.node_disk_warning }}
+          labels:
+            severity: warning
+            layer: infrastructure
+            component: node-exporter
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Node Disk Warning: {{ "{{" }} $labels.instance {{ "}}" }} {{ "{{" }} $labels.mountpoint {{ "}}" }}"
+            description: "node {{ "{{" }} $labels.instance {{ "}}" }} ({{ "{{" }} $labels.mountpoint {{ "}}" }}) usage {{ "{{" }} $value | humanizePercentage {{ "}}" }}."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: NodeDiskHighCritical
+          expr: |
+            (
+              1 - (
+                node_filesystem_avail_bytes{
+                  fstype!~"tmpfs|overlay|squashfs|fuse.*",
+                  mountpoint!~"/boot.*|/run.*|/dev.*"
+                }
+                / node_filesystem_size_bytes{
+                  fstype!~"tmpfs|overlay|squashfs|fuse.*",
+                  mountpoint!~"/boot.*|/run.*|/dev.*"
+                }
+              )
+            ) > {{ .Values.layer1_infrastructure.thresholds.node_disk_critical }}
+          for: {{ .Values.layer1_infrastructure.for.node_disk_critical }}
+          labels:
+            severity: critical
+            layer: infrastructure
+            component: node-exporter
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Node Disk Critical: {{ "{{" }} $labels.instance {{ "}}" }} {{ "{{" }} $labels.mountpoint {{ "}}" }}"
+            description: "node {{ "{{" }} $labels.instance {{ "}}" }} ({{ "{{" }} $labels.mountpoint {{ "}}" }}) usage {{ "{{" }} $value | humanizePercentage {{ "}}" }}.   ."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+    # =========================================================================
+    # GROUP 2.   /
+    # =========================================================================
+    - name: infrastructure.controlplane
+      rules:
+
+        # [FIX] node  instance  (kubelet scrape  )
+        - alert: KubeletDown
+          expr: up{job="kubelet"} == 0
+          for: {{ .Values.layer1_infrastructure.for.kubelet_down }}
+          labels:
+            severity: critical
+            layer: infrastructure
+            component: kubelet
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Kubelet Down: {{ "{{" }} $labels.instance {{ "}}" }}"
+            description: "kubelet {{ "{{" }} $labels.instance {{ "}}" }} is not responding.  node pod   in progress."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: ApiserverDown
+          expr: up{job="apiserver"} == 0
+          for: {{ .Values.layer1_infrastructure.for.apiserver_down }}
+          labels:
+            severity: critical
+            layer: infrastructure
+            component: apiserver
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "API Server Down"
+            description: "Kubernetes API Server is not responding. kubectl/ArgoCD/controller   ."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: CoreDNSDown
+          expr: up{job="coredns"} == 0
+          for: {{ .Values.layer1_infrastructure.for.coredns_down }}
+          labels:
+            severity: critical
+            layer: infrastructure
+            component: coredns
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "CoreDNS Down"
+            description: "CoreDNS is not responding.      ."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        # observability  job Layer 4 PrometheusTargetDown
+        - alert: ScrapeTargetDown
+          expr: |
+            up{job!~"kps-prometheus|kps-alertmanager|kps-grafana|observability/.+|alloy-.+"} == 0
+          for: {{ .Values.layer1_infrastructure.for.target_down }}
+          labels:
+            severity: warning
+            layer: infrastructure
+            component: scrape-target
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Scrape Target Down: {{ "{{" }} $labels.job {{ "}}" }}/{{ "{{" }} $labels.instance {{ "}}" }}"
+            description: "Prometheus {{ "{{" }} $labels.job {{ "}}" }} ({{ "{{" }} $labels.instance {{ "}}" }})  scrape  ."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+    # =========================================================================
+    # GROUP 3. Pod / Workload status
+    # =========================================================================
+    - name: infrastructure.workload
+      rules:
+
+        - alert: PodNotReady
+          expr: |
+            max by (namespace, pod) (
+              kube_pod_status_ready{condition="true"} == 0
+            )
+            * on (namespace, pod) group_left()
+            (kube_pod_status_phase{phase="Running"} == 1)
+          for: {{ .Values.layer1_infrastructure.for.pod_not_ready }}
+          labels:
+            severity: warning
+            layer: infrastructure
+            component: kube-state-metrics
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Pod NotReady: {{ "{{" }} $labels.namespace {{ "}}" }}/{{ "{{" }} $labels.pod {{ "}}" }}"
+            description: "{{ "{{" }} $labels.namespace {{ "}}" }}/{{ "{{" }} $labels.pod {{ "}}" }} Running Ready status ."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: PodCrashLoopBackOff
+          expr: |
+            max by (namespace, pod, container) (
+              kube_pod_container_status_waiting_reason{reason="CrashLoopBackOff"}
+            ) == 1
+          for: {{ .Values.layer1_infrastructure.for.pod_crashloop }}
+          labels:
+            severity: critical
+            layer: infrastructure
+            component: kube-state-metrics
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "CrashLoopBackOff: {{ "{{" }} $labels.namespace {{ "}}" }}/{{ "{{" }} $labels.pod {{ "}}" }}"
+            description: "{{ "{{" }} $labels.namespace {{ "}}" }}/{{ "{{" }} $labels.pod {{ "}}" }}  {{ "{{" }} $labels.container {{ "}}" }} CrashLoopBackOff status."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        # [FIX] spec_replicas   -
+        - alert: DeploymentReplicasMismatch
+          expr: |
+            kube_deployment_spec_replicas
+            != kube_deployment_status_replicas_available
+          for: {{ .Values.layer1_infrastructure.for.deployment_mismatch }}
+          labels:
+            severity: warning
+            layer: infrastructure
+            component: kube-state-metrics
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Deployment Replicas Mismatch: {{ "{{" }} $labels.namespace {{ "}}" }}/{{ "{{" }} $labels.deployment {{ "}}" }}"
+            description: "{{ "{{" }} $labels.namespace {{ "}}" }}/{{ "{{" }} $labels.deployment {{ "}}" }} available replicas({{ "{{" }} $value {{ "}}" }}) desired do not match."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+    # =========================================================================
+    # GROUP 4. PVC / PV
+    # =========================================================================
+    - name: infrastructure.storage
+      rules:
+
+        # [FIX] component: kubelet - kubelet_volume_stats_* metrics
+        - alert: PvcUsedHighWarning
+          expr: |
+            (
+              kubelet_volume_stats_used_bytes
+              / kubelet_volume_stats_capacity_bytes
+            ) > {{ .Values.layer1_infrastructure.thresholds.pvc_used_warning }}
+          for: {{ .Values.layer1_infrastructure.for.pvc_used_warning }}
+          labels:
+            severity: warning
+            layer: infrastructure
+            component: kubelet
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "PVC Used Warning: {{ "{{" }} $labels.namespace {{ "}}" }}/{{ "{{" }} $labels.persistentvolumeclaim {{ "}}" }}"
+            description: "PVC {{ "{{" }} $labels.persistentvolumeclaim {{ "}}" }} usage {{ "{{" }} $value | humanizePercentage {{ "}}" }}."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: PvcUsedHighCritical
+          expr: |
+            (
+              kubelet_volume_stats_used_bytes
+              / kubelet_volume_stats_capacity_bytes
+            ) > {{ .Values.layer1_infrastructure.thresholds.pvc_used_critical }}
+          for: {{ .Values.layer1_infrastructure.for.pvc_used_critical }}
+          labels:
+            severity: critical
+            layer: infrastructure
+            component: kubelet
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "PVC Used Critical: {{ "{{" }} $labels.namespace {{ "}}" }}/{{ "{{" }} $labels.persistentvolumeclaim {{ "}}" }}"
+            description: "PVC {{ "{{" }} $labels.persistentvolumeclaim {{ "}}" }} usage {{ "{{" }} $value | humanizePercentage {{ "}}" }}.     ."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: PvcPredictedFull
+          expr: |
+            predict_linear(
+              kubelet_volume_stats_available_bytes[1h],
+              {{ .Values.layer1_infrastructure.thresholds.pvc_predict_hours }} * 3600
+            ) < 0
+          for: {{ .Values.layer1_infrastructure.for.pvc_predict_full }}
+          labels:
+            severity: warning
+            layer: infrastructure
+            component: kubelet
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "PVC Predicted Full: {{ "{{" }} $labels.namespace {{ "}}" }}/{{ "{{" }} $labels.persistentvolumeclaim {{ "}}" }}"
+            description: "PVC {{ "{{" }} $labels.persistentvolumeclaim {{ "}}" }}  increase  {{ .Values.layer1_infrastructure.thresholds.pvc_predict_hours }}time     ."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: PvNotBound
+          expr: kube_persistentvolume_status_phase{phase!="Bound"} == 1
+          for: {{ .Values.layer1_infrastructure.for.pv_not_bound }}
+          labels:
+            severity: warning
+            layer: infrastructure
+            component: kube-state-metrics
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "PV Not Bound: {{ "{{" }} $labels.persistentvolume {{ "}}" }}"
+            description: "PersistentVolume {{ "{{" }} $labels.persistentvolume {{ "}}" }} Bound status .  status: {{ "{{" }} $labels.phase {{ "}}" }}"
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+{{- end }}

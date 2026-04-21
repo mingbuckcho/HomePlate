@@ -1,0 +1,13 @@
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: ticketing-notification
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: ticketing
+spec:
+  partitions: 3
+  replicas: 1
+  config:
+    retention.ms: "86400000"
+    compression.type: lz4

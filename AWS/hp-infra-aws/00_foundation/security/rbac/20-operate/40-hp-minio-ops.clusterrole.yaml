@@ -1,0 +1,20 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: hp-minio-ops
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments","statefulsets","replicasets"]
+    verbs: ["get","list","watch","create","update","patch","delete"]
+  - apiGroups: [""]
+    resources:
+      - pods
+      - pods/log
+      - services
+      - endpoints
+      - configmaps
+      - secrets
+      - serviceaccounts
+      - events
+      - persistentvolumeclaims
+    verbs: ["get","list","watch","create","update","patch","delete"]

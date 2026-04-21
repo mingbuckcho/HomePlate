@@ -1,0 +1,24 @@
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaUser
+metadata:
+  name: ticketing-notification-keda
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: ticketing
+spec:
+  authentication:
+    type: tls
+  authorization:
+    type: simple
+    acls:
+      # KEDA가 lag/offset 확인을 위해 토픽 읽기(필요 최소)
+      - resource:
+          type: topic
+          name: ticketing-notification
+        operations: [Read]
+
+      # consumer group에 대한 권한
+      - resource:
+          type: group
+          name: ticketing-notification-group
+        operations: [Read, Describe]

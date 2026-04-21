@@ -1,0 +1,19 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: istio-ingress
+  namespace: istio-system
+  labels:
+    release: kps
+spec:
+  selector:
+    matchLabels:
+      app: istio-ingress
+      istio: ingress
+  namespaceSelector:
+    matchNames:
+      - istio-system
+  endpoints:
+    - port: http-envoy-prom
+      path: /stats/prometheus
+      interval: 60s

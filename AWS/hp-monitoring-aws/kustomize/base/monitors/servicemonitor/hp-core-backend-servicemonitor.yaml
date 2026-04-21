@@ -1,0 +1,26 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: hp-core-backend
+  namespace: observability
+  labels:
+    release: kps
+spec:
+  namespaceSelector:
+    matchNames:
+      - hp-core
+  selector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values:
+          - hp-backend-core
+          - hp-backend-booking
+          - hp-backend-queue
+          - hp-backend-worker
+  endpoints:
+    - interval: 30s
+      scrapeTimeout: 10s
+      path: /actuator/prometheus
+      port: http
+      honorLabels: false

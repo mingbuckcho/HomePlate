@@ -1,0 +1,18 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hp-frontend          # 아르고CD 대시보드에 표시될 이름
+  namespace: argocd          # 아르고CD가 설치된 네임스페이스
+spec:
+  project: default           # 기본 프로젝트 사용
+  source:
+    repoURL: https://github.com/homeplate-project/hp-infra-aws.git # 인프라 레포 주소
+    targetRevision: HEAD     # 가장 최신 커밋을 추적
+    path: 03_core_apps/hp-core # 젠킨스가 수정하는 파일들이 모여있는 경로
+  destination:
+    server: https://kubernetes.default.svc # 현재 EKS 클러스터 내부
+    namespace: hp-core       # 파드가 배포될 동네 (SA, SecretStore 등이 있는 곳)
+  syncPolicy:
+    automated:               # 자동 동기화 설정
+      prune: true            # 깃허브에서 삭제된 리소스를 클러스터에서도 삭제
+      selfHeal: true         # 클러스터에서 수동으로 바꾼 걸 다시 깃허브 상태로 복구

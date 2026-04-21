@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: hp-frontend-sa
+  namespace: hp-core
+  annotations:
+    # 민수 님의 계정 ID와 Role 이름 확인 완료
+    eks.amazonaws.com/role-arn: arn:aws:iam::681224237958:role/hp-frontend-irsa-role

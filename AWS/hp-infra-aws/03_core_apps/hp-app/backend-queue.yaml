@@ -1,0 +1,161 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: hp-backend-queue
+  namespace: hp-core
+  labels:
+    app: hp-backend-queue
+spec:
+  selector:
+    matchLabels:
+      app: hp-backend-queue
+  strategy:
+    canary:
+      canaryService: hp-backend-queue-canary
+      stableService: hp-backend-queue-stable
+      trafficRouting:
+        istio:
+          virtualService:
+            name: hp-integrated-vs
+            routes:
+            - queue-api # VirtualService에 설정한 name과 일치해야 함
+      steps:
+      - setWeight: 100
+#      - analysis:
+#          templates:
+#          - templateName: hp-canary-analysis
+#          args:
+#          - name: service-name
+#            value: hp-backend-queue
+#      - setWeight: 50
+#      - pause: {duration: 5m}
+#      - setWeight: 100
+  template:
+    metadata:
+      labels:
+        app: hp-backend-queue
+      annotations:
+        sidecar.istio.io/rewriteAppHTTPProbers: "true"
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/actuator/prometheus"
+        prometheus.io/port: "8080"
+    spec:
+      nodeSelector:
+        nodepool: app
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution: # "가급적 찢어줘" (Soft 모드)
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - hp-backend-queue # 자기 자신과 같은 라벨을 가진 파드를 피함
+              topologyKey: "kubernetes.io/hostname" # 기준은 '노드 이름'
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+
+      containers:
+      - name: hp-backend-queue
+        image: 681224237958.dkr.ecr.ap-northeast-2.amazonaws.com/hp-backend:v0.1.80
+        
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+        envFrom:
+        - secretRef:
+            name: hp-backend-secret
+        env:
+        - name: SPRING_PROFILES_ACTIVE
+          value: "prod,queue" # ★ 대기열 컨트롤러 활성화
+        - name: OTEL_METRICS_EXPORTER
+          value: "none"
+        - name: OTEL_SERVICE_NAME
+          value: "hp-backend-queue"
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "http://alloy-collector.observability.svc.cluster.local:4318"
+        - name: OTEL_INSTRUMENTATION_LOGBACK_MDC_ENABLED
+          value: "true"
+        - name: OTEL_INSTRUMENTATION_COMMON_LOGGING_TRACE_ID
+          value: "true"
+        - name: OTEL_INSTRUMENTATION_COMMON_LOGGING_SPAN_ID
+          value: "true"
+        - name: OTEL_INSTRUMENTATION_COMMON_LOGGING_TRACE_FLAGS
+          value: "true"
+        - name: OTEL_LOGS_EXPORTER
+          value: "none"
+        - name: APP_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: hp-backend-secret
+              key: ADMIN_PASSWORD
+
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "256Mi"
+          limits:
+            cpu: "500m"
+            memory: "1Gi"
+        livenessProbe:
+          httpGet:
+            path: /actuator/health/liveness
+            port: 8080
+          initialDelaySeconds: 150
+          periodSeconds: 10
+          timeoutSeconds: 5        # 👈 [추가] 대기 시간을 5초로 늘림 (기본 1초)
+          failureThreshold: 5
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: 8080
+          initialDelaySeconds: 150
+          periodSeconds: 10
+          timeoutSeconds: 5        # 👈 [추가] 대기 시간을 5초로 늘림 (기본 1초)
+          failureThreshold: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hp-backend-queue-stable
+  namespace: hp-core
+  labels:
+    app: hp-backend-queue
+spec:
+  type: ClusterIP
+  selector:
+    app: hp-backend-queue
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+
+---
+# 🔥 [변경] 서비스 분리 (Canary)
+apiVersion: v1
+kind: Service
+metadata:
+  name: hp-backend-queue-canary
+  namespace: hp-core
+  labels:
+    app: hp-backend-queue
+spec:
+  type: ClusterIP
+  selector:
+    app: hp-backend-queue
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

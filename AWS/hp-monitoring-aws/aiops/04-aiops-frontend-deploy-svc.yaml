@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aiops-frontend
+  namespace: aiops
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aiops-frontend
+  template:
+    metadata:
+      labels:
+        app: aiops-frontend
+    spec:
+      nodeSelector:
+        nodepool: obs
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: obs
+          effect: NoSchedule    
+      containers:
+        - name: aiops-frontend
+          image: 681224237958.dkr.ecr.ap-northeast-2.amazonaws.com/aiops-frontend:latest
+          ports:
+            - containerPort: 3000
+          env:
+            - name: NEXT_PUBLIC_API_BASE_URL
+              value: "http://localhost:8000"
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aiops-frontend
+  namespace: aiops
+spec:
+  selector:
+    app: aiops-frontend
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000

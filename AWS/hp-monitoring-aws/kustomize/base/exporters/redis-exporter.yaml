@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-exporter
+  namespace: observability
+  labels:
+    app: redis-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis-exporter
+  template:
+    metadata:
+      labels:
+        app: redis-exporter
+    spec:
+      nodeSelector:
+        nodepool: obs
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: obs
+          effect: NoSchedule
+      containers:
+        - name: redis-exporter
+          image: oliver006/redis_exporter:v1.69.0
+          args:
+            - --redis.addr=rediss://clustercfg.hp-redis-cluster.ellyj6.apn2.cache.amazonaws.com:6379
+            - --skip-tls-verification
+          ports:
+            - name: http
+              containerPort: 9121
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-exporter
+  namespace: observability
+  labels:
+    app: redis-exporter
+spec:
+  selector:
+    app: redis-exporter
+  ports:
+    - name: http
+      port: 9121
+      targetPort: http
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: redis-exporter
+  namespace: observability
+  labels:
+    release: kps
+spec:
+  selector:
+    matchLabels:
+      app: redis-exporter
+  namespaceSelector:
+    matchNames:
+      - observability
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 60s

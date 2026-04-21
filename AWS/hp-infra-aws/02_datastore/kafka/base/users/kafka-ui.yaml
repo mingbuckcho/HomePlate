@@ -1,0 +1,26 @@
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaUser
+metadata:
+  name: kafka-ui
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: ticketing
+spec:
+  authentication:
+    type: tls
+  authorization:
+    type: simple
+    acls:
+      - resource:
+          type: topic
+          name: "*"
+          patternType: literal
+        operations: [Read, Describe, DescribeConfigs]
+      - resource:
+          type: group
+          name: "*"
+          patternType: literal
+        operations: [Read, Describe]
+      - resource:
+          type: cluster
+        operations: [Describe, DescribeConfigs]

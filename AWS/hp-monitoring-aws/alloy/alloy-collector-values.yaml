@@ -1,0 +1,138 @@
+controller:
+  type: deployment
+  replicas: 2
+  nodeSelector:
+    nodepool: obs
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: obs
+      effect: NoSchedule
+
+serviceAccount:
+  create: true
+  automountServiceAccountToken: true
+  annotations: {}
+
+alloy:
+  configMap:
+    create: true
+    content: |-
+      // =========================
+      // Alloy Collector (EKS)
+      // - RUM Faro: 12347
+      // - OTLP: 4317/4318 (traces + metrics)
+      // =========================
+
+      // ---- RUM (Faro) receiver ----
+      faro.receiver "rum" {
+        server {
+          listen_address       = "0.0.0.0"
+          listen_port          = 12347
+          cors_allowed_origins = ["https://homeplate.site"]
+        }
+        output {
+          logs   = [loki.write.rum.receiver]
+          traces = [otelcol.processor.batch.traces.input]
+        }
+      }
+
+      // ---- Loki write (RUM logs) ----
+      loki.write "rum" {
+        endpoint {
+          url = "http://loki-gateway.observability.svc.cluster.local/loki/api/v1/push"
+          headers = { "X-Scope-OrgID" = "homeplate" }
+        }
+        external_labels = {
+          cluster = "hp-eks",
+          app     = "homeplate-web",
+        }
+      }
+
+      // ---- OTLP receiver (traces + metrics) ----
+      otelcol.receiver.otlp "ingest" {
+        grpc { endpoint = "0.0.0.0:4317" }
+        http { endpoint = "0.0.0.0:4318" }
+        output {
+          traces  = [otelcol.processor.k8sattributes.traces.input]
+          metrics = [otelcol.processor.batch.rum_metrics.input]
+        }
+      }
+
+      // ---- metrics -> Prometheus remote_write ----
+      otelcol.processor.batch "rum_metrics" {
+        output { metrics = [otelcol.exporter.prometheusremotewrite.kps.input] }
+      }
+
+       otelcol.exporter.prometheusremotewrite "kps" {
+         endpoint {
+           url = "http://kps-prometheus.observability.svc.cluster.local:9090/api/v1/write"
+         }
+       }
+
+      // ---- k8s metadata (traces) ----
+      otelcol.processor.k8sattributes "traces" {
+        auth_type = "serviceAccount"
+        passthrough = false
+        extract {
+          metadata = [
+            "k8s.namespace.name",
+            "k8s.pod.name",
+            "k8s.container.name",
+            "k8s.node.name",
+          ]
+        }
+        output {
+          traces = [otelcol.processor.transform.hp_resource.input]
+        }
+      }
+
+      otelcol.processor.transform "hp_resource" {
+        error_mode = "ignore"
+        trace_statements {
+          context = "resource"
+          statements = [
+            `set(attributes["deployment.environment"], "prod")`,
+            `set(attributes["k8s.cluster.name"], "hp-eks")`,
+          ]
+        }
+        output {
+          traces = [otelcol.processor.batch.traces.input]
+        }
+      }
+
+      // ---- traces -> Tempo ----
+      otelcol.processor.batch "traces" {
+        output { traces = [otelcol.exporter.otlp.tempo.input] }
+      }
+
+      otelcol.exporter.otlp "tempo" {
+        client {
+          endpoint = "tempo-distributor.observability.svc.cluster.local:4317"
+          tls { insecure = true }
+        }
+      }
+
+  extraPorts:
+    - name: faro
+      port: 12347
+      targetPort: 12347
+      protocol: TCP
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+      protocol: TCP
+    - name: otlp-http
+      port: 4318
+      targetPort: 4318
+      protocol: TCP
+
+service:
+  enabled: true
+  type: ClusterIP
+
+ingress:
+  enabled: false
+
+serviceMonitor:
+  enabled: false

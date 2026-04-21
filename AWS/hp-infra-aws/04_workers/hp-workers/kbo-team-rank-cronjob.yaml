@@ -1,0 +1,79 @@
+# 하루 1번 CRAWL_KBO_TEAM_RANK 잡을 등록한다
+# 팀 순위는 일 단위 갱신으로 충분하다
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: hp-kbo-team-rank
+  namespace: hp-workers
+  labels:
+    app: hp-kbo-team-rank
+spec:
+  # 매일 06:00 실행
+  schedule: "0 6 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          nodeSelector:
+            nodepool: app
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+          containers:
+            - name: hp-kbo-team-rank
+              image: "681224237958.dkr.ecr.ap-northeast-2.amazonaws.com/hp-ingestion:v0.1.3"
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                seccompProfile:
+                  type: RuntimeDefault
+              command:
+                - python
+                - -c
+                - |
+                  from app.mongo_client import get_db, utc_now
+                  from datetime import timedelta
+                  db  = get_db()
+                  now = utc_now()
+                  result = db.crawl_jobs.update_one(
+                    {
+                      "type":   "CRAWL_KBO_TEAM_RANK",
+                      "status": {"$in": ["PENDING", "RUNNING"]},
+                    },
+                    {"$setOnInsert": {
+                      "type":      "CRAWL_KBO_TEAM_RANK",
+                      "status":    "PENDING",
+                      "priority":  80,
+                      "payload":   {},
+                      "attempts":  0,
+                      "nextRunAt": now + timedelta(seconds=1),
+                      "createdAt": now,
+                      "updatedAt": now,
+                    }},
+                    upsert=True,
+                  )
+                  if result.upserted_id:
+                    print("[hp-kbo-team-rank-cronjob] 잡 등록 완료")
+                  else:
+                    print("[hp-kbo-team-rank-cronjob] 이미 처리 중, 건너뜀")
+              envFrom:
+                - secretRef:
+                    name: hp-app-secret
+                - configMapRef:
+                    name: hp-config
+              resources:
+                requests:
+                  cpu: "50m"
+                  memory: "64Mi"
+                limits:
+                  cpu: "100m"
+                  memory: "128Mi"
+          restartPolicy: OnFailure

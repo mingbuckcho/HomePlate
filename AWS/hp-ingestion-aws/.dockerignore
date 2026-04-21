@@ -1,0 +1,26 @@
+# 가상환경: Docker 이미지 안에서 새로 pip install하므로 제외한다
+# 포함하면 이미지 크기가 수백 MB 증가한다
+.venv/
+venv/
+
+# 파이썬 캐시: 불필요하고 OS에 따라 동작이 다를 수 있다
+__pycache__/
+*.pyc
+
+# 테스트 코드: 운영 이미지에 포함할 필요 없다
+tests/
+
+# k8s 매니페스트: 앱 실행에 불필요하다
+k8s/
+
+# 로컬 개발 전용 파일들
+.env
+.env.prod        # 운영 환경변수는 k8s Secret으로 주입한다
+.gitignore
+.dockerignore
+docker-compose.yml
+pytest.ini
+mariadb-init.sql
+
+# 개발용 패키지 목록 (pytest 등): 운영 이미지에 불필요하다
+app/requirements-dev.txt

@@ -1,0 +1,24 @@
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: kafka-ui
+  namespace: kafka
+spec:
+  hosts:
+    - kafka.homeplate.site
+  gateways:
+    - istio-system/homeplate-gateway
+  http:
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: kafka-ui
+            port:
+              number: 80
+      headers:
+        request:
+          set:
+            X-Forwarded-Proto: "https"
+            X-Forwarded-Port: "443"

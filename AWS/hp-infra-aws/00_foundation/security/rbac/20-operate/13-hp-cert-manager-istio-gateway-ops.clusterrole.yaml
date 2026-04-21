@@ -1,0 +1,20 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: hp-cert-manager-istio-gateway-ops
+  labels:
+    homeplate.io/domain: cert-manager
+    homeplate.io/risk: medium
+rules:
+  # istio-system에 Certificate CR을 만들고 관리
+  - apiGroups: ["cert-manager.io"]
+    resources: ["certificates"]
+    verbs: ["get","list","watch","create","update","patch","delete"]
+  - apiGroups: ["cert-manager.io"]
+    resources: ["certificates/status"]
+    verbs: ["get","list","watch"]
+
+  # Gateway가 참조할 TLS Secret을 istio-system에 생성/갱신 가능해야 함
+  - apiGroups: [""]
+    resources: ["secrets","events"]
+    verbs: ["get","list","watch","create","update","patch","delete"]

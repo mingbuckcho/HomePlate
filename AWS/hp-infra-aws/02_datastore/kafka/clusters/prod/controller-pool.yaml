@@ -1,0 +1,58 @@
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaNodePool
+metadata:
+  name: controller
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: ticketing
+spec:
+  # prod는 controller 3개
+  # 1개 죽어도 나머지 2개로 과반수 투표 가능
+  replicas: 3
+  roles:
+    - controller
+  template:
+    kafkaContainer:
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+    pod:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      # ✅ 여기 아래로 “스케줄링 관련”을 전부 모은다
+      tolerations:
+        - key: "dedicated"
+          operator: "Equal"
+          value: "data"
+          effect: "NoSchedule"
+
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    strimzi.io/cluster: ticketing
+                    strimzi.io/name: ticketing-kafka-controller
+                topologyKey: kubernetes.io/hostname
+  storage:
+    type: jbod
+    volumes:
+      - id: 0
+        type: persistent-claim
+        size: 10Gi
+        class: gp3
+        deleteClaim: false
+  resources:
+    requests:
+      memory: 512Mi
+      cpu: "250m"
+    limits:
+      memory: 1Gi
+      cpu: "500m"

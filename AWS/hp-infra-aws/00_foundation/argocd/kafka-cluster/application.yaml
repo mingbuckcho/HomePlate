@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kafka-cluster
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: 'https://github.com/homeplate-project/hp-infra-aws.git'
+    # 아까 보여주신 트리 구조의 최상위 폴더 경로입니다.
+    path: 02_datastore/kafka
+    targetRevision: main # 혹시 다른 브랜치(aws 등)를 쓰신다면 이름을 바꿔주세요!
+    directory:
+      recurse: true      # 하위 폴더(clusters 등)까지 싹 다 뒤져서 배포하라는 핵심 옵션!
+      exclude: '{operator/*,clusters/dev/*,utils/kafka-ui/*}'
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: kafka     # 카프카가 설치될 네임스페이스
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true # 카프카 리소스가 클 때를 대비한 안전 옵션

@@ -1,0 +1,86 @@
+pipeline {
+    agent {
+        kubernetes {
+            yaml '''
+            apiVersion: v1
+            kind: Pod
+            spec:
+              containers:
+              - name: gradle
+                image: gradle:8.5-jdk17
+                command: ['cat']
+                tty: true
+                resources:
+                  requests:
+                    memory: "1Gi"   # 최소 요구 메모리
+                    cpu: "500m"
+                  limits:
+                    memory: "2Gi"   # 최대 허용 메모리 (빌드 시 2GB 정도는 주는 것이 안전합니다)
+                    cpu: "1000m"
+              - name: kaniko
+                image: gcr.io/kaniko-project/executor:debug
+                command: ['sleep']
+                args: ['9999999']
+            '''
+        }
+    }
+
+    environment {
+        HARBOR_URL = "192.168.77.238:30002"
+        HARBOR_PROJECT = "hp-apps"
+        IMAGE_NAME = "hp-backend"
+        IMAGE_TAG = "v${env.BUILD_NUMBER}"
+        HARBOR_CREDS_ID = "harbor-credentials"
+        GITHUB_CREDS_ID = "github-credentials"
+    }
+
+    stages {
+        stage('1. Checkout Code') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('2. Build with Gradle') {
+            steps {
+                container('gradle') {
+                    sh 'gradle clean build -x test'
+                }
+            }
+        }
+
+        stage('3. Build & Push Image with Kaniko') {
+            steps {
+                container('kaniko') {
+                    withCredentials([usernamePassword(credentialsId: "${HARBOR_CREDS_ID}", passwordVariable: 'HARBOR_PW', usernameVariable: 'HARBOR_ID')]) {
+                        sh '''
+                            echo "{\\"auths\\":{\\"${HARBOR_URL}\\":{\\"username\\":\\"${HARBOR_ID}\\",\\"password\\":\\"${HARBOR_PW}\\"}}}" > /kaniko/.docker/config.json
+                            /kaniko/executor --context `pwd` --dockerfile `pwd`/Dockerfile --destination ${HARBOR_URL}/${HARBOR_PROJECT}/${IMAGE_NAME}:${IMAGE_TAG} --insecure
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('4. Update K8s Manifest (Trigger ArgoCD)') {
+            steps {
+                container('jnlp') {
+                    withCredentials([usernamePassword(credentialsId: "${GITHUB_CREDS_ID}", passwordVariable: 'GIT_TOKEN', usernameVariable: 'GIT_ID')]) {
+                        sh '''
+                            git clone https://${GIT_ID}:${GIT_TOKEN}@github.com/homeplate-project/hp-infra.git
+                            cd hp-infra
+                            sed -i "s|image: ${HARBOR_URL}.*|image: ${HARBOR_URL}/${HARBOR_PROJECT}/${IMAGE_NAME}:${IMAGE_TAG}|g" apps/hp-backend/deployment.yaml
+                            
+                            git config user.name "Jenkins CI"
+                            git config user.email "jenkins@homeplate.com"
+                            git add apps/hp-backend/deployment.yaml
+                            git commit -m "chore(ci): update hp-backend image to ${IMAGE_TAG}"
+                            git push origin main
+                        '''
+                    }
+                }
+            }
+        }
+    }
+}
+

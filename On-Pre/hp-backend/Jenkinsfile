@@ -1,0 +1,147 @@
+pipeline {
+    agent {
+        kubernetes {
+            yaml '''
+            apiVersion: "v1"
+            kind: "Pod"
+            spec:
+              automountServiceAccountToken: false
+              nodeSelector:
+                nodepool: "app"
+              securityContext:
+                runAsUser: 1000
+                runAsGroup: 1000
+                fsGroup: 1000
+              containers:
+              - name: "gradle"
+                image: "gradle:8.5-jdk17"
+                command: ["cat"]
+                tty: true
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop: ["ALL"]
+                resources:
+                  requests:
+                    memory: "64Mi"
+                    cpu: "10m"
+                  limits:
+                    memory: "2Gi"
+                    cpu: "1000m"
+              - name: "kaniko"
+                image: "gcr.io/kaniko-project/executor:debug"
+                command: ["sleep"]
+                args: ["9999999"]
+                tty: true
+                securityContext:
+                  runAsUser: 0
+                  # [트러블슈팅 수정 포인트 1] Kyverno 정책 예외를 바탕으로 권한 상승 허용 (파일 권한 우회 및 압축 조작용)
+                  allowPrivilegeEscalation: true
+                  # [트러블슈팅 수정 포인트 2] OS 커널 레벨의 파일 쓰기 기능을 위해 capabilities: drop: ["ALL"] 항목 완전히 삭제
+                resources:
+                  requests:
+                    cpu: "50m"
+                    memory: "128Mi"
+                  limits:
+                    cpu: "500m"
+                    memory: "512Mi"
+              - name: "jnlp"
+                image: "jenkins/inbound-agent:3355.v388858a_47b_33-3-jdk21"
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop: ["ALL"]
+                resources:
+                  requests:
+                    cpu: "50m"
+                    memory: "128Mi"
+                  limits:
+                    cpu: "200m"
+                    memory: "256Mi"
+            '''
+        }
+    }
+
+
+    environment {
+        HARBOR_URL = "192.168.77.238:30002"
+        HARBOR_PROJECT = "hp-apps"
+        IMAGE_NAME = "hp-backend"
+        IMAGE_TAG = "v${env.BUILD_NUMBER}"
+        HARBOR_CREDS_ID = "harbor-credentials"
+        GITHUB_CREDS_ID = "github-credentials"
+    }
+
+    stages {
+        stage('1. Checkout Code') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('2. Build with Gradle') {
+            steps {
+                container('gradle') {
+                    sh 'chmod +x gradlew'
+                    sh './gradlew clean build -x test'
+                }
+            }
+        }
+
+        stage('3. SonarQube Analysis') {
+            steps {
+                container('gradle') {
+                    withSonarQubeEnv(installationName: 'SonarQube-Server', credentialsId: 'sonar-token-backend') { 
+                        sh './gradlew sonar'
+                    }
+                }
+            }
+        }
+
+        stage('4. Quality Gate') {
+            steps {
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: false
+                }
+            }
+        }
+
+        stage('5. Build & Push Image with Kaniko') {
+            steps {
+                container('kaniko') {
+                    withCredentials([usernamePassword(credentialsId: "${HARBOR_CREDS_ID}", passwordVariable: 'HARBOR_PW', usernameVariable: 'HARBOR_ID')]) {
+                        sh '''
+                            printf '{"auths":{"%s":{"username":"%s","password":"%s"}}}' \
+                            "$HARBOR_URL" "$HARBOR_ID" "$HARBOR_PW" > /kaniko/.docker/config.json
+                    
+                            /kaniko/executor --context `pwd` --dockerfile `pwd`/Dockerfile \
+                            --destination "${HARBOR_URL}/${HARBOR_PROJECT}/${IMAGE_NAME}:${IMAGE_TAG}" --insecure
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('6. Update K8s Manifest (Trigger ArgoCD)') {
+            steps {
+                container('jnlp') {
+                    withCredentials([usernamePassword(credentialsId: "${GITHUB_CREDS_ID}", passwordVariable: 'GIT_TOKEN', usernameVariable: 'GIT_ID')]) {
+                        sh '''
+                            git clone "https://${GIT_ID}:${GIT_TOKEN}@github.com/homeplate-project/hp-infra.git"
+                            cd hp-infra
+                            
+                            sed -i "s|image: ${HARBOR_URL}/${HARBOR_PROJECT}/${IMAGE_NAME}:.*|image: ${HARBOR_URL}/${HARBOR_PROJECT}/${IMAGE_NAME}:${IMAGE_TAG}|g" apps/hp-backend/*.yaml
+                            
+                            git config user.name "Jenkins CI"
+                            git config user.email "jenkins@homeplate.com"
+
+                            git add apps/hp-backend/
+                            git commit -m "chore(ci): update hp-backend image to ${IMAGE_TAG} for Core, Queue, Booking"
+                            git push origin main
+                        '''
+                    }
+                }
+            }
+        }
+    }
+}

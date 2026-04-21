@@ -1,0 +1,93 @@
+{{- range .Values.exporters }}
+---
+# ── Deployment ──────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .name }}
+  namespace: {{ $.Values.defaults.namespace }}
+  labels:
+    app: {{ .name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .name }}
+    spec:
+      nodeSelector:
+        nodepool: {{ $.Values.defaults.nodeSelector.nodepool }}
+      tolerations:
+        {{- range $.Values.defaults.tolerations }}
+        - key: {{ .key }}
+          operator: {{ .operator }}
+          value: {{ .value }}
+          effect: {{ .effect }}
+        {{- end }}
+      containers:
+        - name: {{ .name }}
+          image: {{ .image }}
+          imagePullPolicy: {{ .imagePullPolicy | default $.Values.defaults.imagePullPolicy }}
+          args:
+            {{- range .args }}
+            - {{ . }}
+            {{- end }}
+          {{- if .secret }}
+          env:
+            - name: {{ .secret.envKey }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .secret.name }}
+                  key: {{ .secret.secretKey }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .containerPort }}
+          resources:
+            requests:
+              cpu: {{ $.Values.defaults.resources.requests.cpu }}
+              memory: {{ $.Values.defaults.resources.requests.memory }}
+            limits:
+              cpu: {{ $.Values.defaults.resources.limits.cpu }}
+              memory: {{ $.Values.defaults.resources.limits.memory }}
+---
+# ── Service ─────────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .name }}
+  namespace: {{ $.Values.defaults.namespace }}
+  labels:
+    app: {{ .name }}
+spec:
+  type: ClusterIP
+  selector:
+    app: {{ .name }}
+  ports:
+    - name: http
+      port: {{ .containerPort }}
+      targetPort: http
+---
+# ── ServiceMonitor ──────────────────────────────────────────
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ .name }}
+  namespace: {{ $.Values.defaults.namespace }}
+  labels:
+    release: {{ $.Values.defaults.release }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ .name }}
+  namespaceSelector:
+    matchNames:
+      - {{ $.Values.defaults.namespace }}
+  endpoints:
+    - port: http
+      path: {{ .smPath | default $.Values.defaults.smPath }}
+      interval: {{ .smInterval | default $.Values.defaults.smInterval }}
+{{- end }}

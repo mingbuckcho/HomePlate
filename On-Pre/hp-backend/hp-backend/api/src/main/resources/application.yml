@@ -1,0 +1,88 @@
+# 0. 한글 깨짐 및 인코딩 방지 (현업 필수)
+server:
+  servlet:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
+
+spring:
+  application:
+    name: HomePlate
+
+  # 1. 데이터베이스 설정 (Master: 241, Replica: 242)
+  datasource:
+    # [핵심 수정] 기본 URL을 마스터로 지정하여 자바 설정 미비 시에도 구동되도록 보장
+    url: jdbc:mysql://${DB_MASTER_URL}
+    username: ${DB_USER}
+    password: ${DB_PASS}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+    # [확장] 자바 코드(AbstractRoutingDataSource)에서 참조할 계층 구조
+    master:
+      jdbc-url: jdbc:mysql://${DB_MASTER_URL}
+      username: ${DB_USER}
+      password: ${DB_PASS}
+    replica:
+      jdbc-url: jdbc:mysql://${DB_REPLICA_URL}
+      username: ${DB_USER}
+      password: ${DB_PASS}
+
+    # HikariCP 커넥션 풀 최적화 (운영 환경 권장값)
+    hikari:
+      connection-init-sql: "SET NAMES utf8mb4"
+      maximum-pool-size: 10
+      minimum-idle: 5
+      idle-timeout: 30000
+      max-lifetime: 1800000
+
+  # 2. Redis 클러스터 설정 (243, 244, 245)
+  data:
+    redis:
+      cluster:
+        nodes: ${REDIS_NODES}
+        max-redirects: 3
+
+  # 3. JPA 설정
+  jpa:
+    hibernate:
+      ddl-auto: update      # 개발기 기준, 운영 전환 시 validate 권장
+    properties:
+      hibernate:
+        format_sql: false
+        show_sql: false
+        # [핵심 수정] Dialect를 명시하여 실행 시 메타데이터 조회 에러(BackOff 원인) 차단
+        dialect: org.hibernate.dialect.MariaDBDialect
+    # [핵심 수정] 하이버네이트가 DB 연결을 지연하지 않도록 설정
+    open-in-view: false
+
+# 4. Swagger 설정 (API 문서화)
+springdoc:
+  api-docs:
+    path: /api
+  swagger-ui:
+    path: /swagger-ui.html
+    disable-swagger-default-url: true
+    display-request-duration: true
+
+# 5. JWT 보안 설정 (K8s Secret 주입)
+jwt:
+  secret: ${JWT_KEY}
+  accessTokenExt: 3600000    # 1시간
+  refreshTokenExt: 604800000  # 7일
+
+# 6. 외부 API 연동 (기상청)
+api:
+  weather:
+    key: ${WEATHER_API_KEY}
+    url: http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst
+
+# 7. 모니터링 (Prometheus & Actuator)
+management:
+  endpoints:
+    web:
+      exposure:
+        include: prometheus,health,info
+  endpoint:
+    prometheus:
+      enabled: true

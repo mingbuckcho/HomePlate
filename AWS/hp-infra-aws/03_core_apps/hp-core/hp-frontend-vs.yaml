@@ -1,0 +1,58 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: hp-frontend-vs
+  namespace: hp-core
+spec:
+  hosts:
+  - homeplate.site
+  gateways:
+  - istio-system/homeplate-gateway
+  http:
+  - name: rum-collect
+    match:
+    - uri:
+        prefix: /collect
+    corsPolicy:
+      allowHeaders:
+      - Content-Type
+      - x-faro-session-id
+      allowMethods:
+      - POST
+      - OPTIONS
+      allowOrigins:
+      - exact: https://homeplate.site
+    route:
+    - destination:
+        host: alloy-collector.observability.svc.cluster.local
+        port:
+          number: 12347
+  - name: rum-cdn-cgi
+    match:
+    - uri:
+        prefix: /cdn-cgi/rum
+    corsPolicy:
+      allowHeaders:
+      - Content-Type
+      - x-faro-session-id
+      allowMethods:
+      - POST
+      - OPTIONS
+      allowOrigins:
+      - exact: https://homeplate.site
+    route:
+    - destination:
+        host: alloy-collector.observability.svc.cluster.local
+        port:
+          number: 12347
+  - name: primary
+    match:
+    - uri:
+        prefix: /
+    route:
+    - destination:
+        host: hp-frontend-stable
+      weight: 100
+    - destination:
+        host: hp-frontend-canary
+      weight: 0

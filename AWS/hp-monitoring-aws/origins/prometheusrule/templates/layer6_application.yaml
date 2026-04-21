@@ -1,0 +1,529 @@
+{{- if .Values.layer6_application.enabled }}
+# =============================================================================
+# Layer 6 - Application
+# targets: hp-frontend, hp-backend, hp-workers(not deployed), aiops-backend
+# =============================================================================
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: layer-application-rules
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    release: {{ .Values.global.releaseLabel }}
+    layer: application
+spec:
+  groups:
+
+    # =========================================================================
+    # GROUP 1. hp-frontend
+    # =========================================================================
+    {{- if .Values.layer6_application.services.hp_frontend.enabled }}
+    - name: application.hp_frontend
+      rules:
+
+        - alert: HpFrontendNotReady
+          expr: |
+            (
+              kube_deployment_spec_replicas{
+                namespace="{{ .Values.layer6_application.services.hp_frontend.namespace }}",
+                deployment="{{ .Values.layer6_application.services.hp_frontend.deployment }}"
+              }
+              != kube_deployment_status_replicas_available{
+                namespace="{{ .Values.layer6_application.services.hp_frontend.namespace }}",
+                deployment="{{ .Values.layer6_application.services.hp_frontend.deployment }}"
+              }
+            )
+          for: {{ .Values.layer6_application.for.pod_not_ready }}
+          labels:
+            severity: critical
+            layer: application
+            component: hp-frontend
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "hp-frontend Not Ready"
+            description: "hp-frontend available replicas desired do not match."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: HpFrontendPodCrashLoop
+          expr: |
+            max by (pod, container) (
+              kube_pod_container_status_waiting_reason{
+                namespace="{{ .Values.layer6_application.services.hp_frontend.namespace }}",
+                reason="CrashLoopBackOff"
+              }
+              * on(namespace, pod) group_left(label_app)
+              kube_pod_labels{
+                label_app="{{ .Values.layer6_application.services.hp_frontend.label_app }}"
+              }
+            ) == 1
+          for: {{ .Values.layer6_application.for.pod_crashloop }}
+          labels:
+            severity: critical
+            layer: application
+            component: hp-frontend
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "hp-frontend CrashLoopBackOff: {{ "{{" }} $labels.pod {{ "}}" }}"
+            description: "hp-frontend pod {{ "{{" }} $labels.pod {{ "}}" }} CrashLoopBackOff status."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+    {{- end }}
+
+    # =========================================================================
+    # GROUP 2. hp-backend-* (core / booking / queue / worker)
+    # =========================================================================
+    {{- range $name, $svc := .Values.layer6_application.services }}
+    {{- if and $svc.enabled (has $name (list "hp_backend_core" "hp_backend_booking" "hp_backend_queue")) }}
+    - name: application.{{ $name }}
+      rules:
+
+        - alert: {{ $name | replace "_" " " | title | replace " " "" }}NotReady
+          expr: |
+            (
+              kube_deployment_spec_replicas{
+                namespace="{{ $svc.namespace }}",
+                deployment="{{ $svc.deployment }}"
+              }
+              != kube_deployment_status_replicas_available{
+                namespace="{{ $svc.namespace }}",
+                deployment="{{ $svc.deployment }}"
+              }
+            )
+          for: {{ $.Values.layer6_application.for.pod_not_ready }}
+          labels:
+            severity: critical
+            layer: application
+            component: {{ $svc.label_app }}
+            cluster: {{ $.Values.global.cluster }}
+            environment: {{ $.Values.global.environment }}
+            team: {{ $.Values.global.team }}
+          annotations:
+            summary: "{{ $svc.label_app }} Not Ready"
+            description: "{{ $svc.label_app }} available replicas desired do not match."
+            runbook_url: {{ $.Values.global.runbook_url }}
+            dashboard_url: {{ $.Values.global.dashboard_url }}
+
+        - alert: {{ $name | replace "_" " " | title | replace " " "" }}PodCrashLoop
+          expr: |
+            max by (pod, container) (
+              kube_pod_container_status_waiting_reason{
+                namespace="{{ $svc.namespace }}",
+                reason="CrashLoopBackOff"
+              }
+              * on(namespace, pod) group_left(label_app)
+              kube_pod_labels{
+                label_app="{{ $svc.label_app }}"
+              }
+            ) == 1
+          for: {{ $.Values.layer6_application.for.pod_crashloop }}
+          labels:
+            severity: critical
+            layer: application
+            component: {{ $svc.label_app }}
+            cluster: {{ $.Values.global.cluster }}
+            environment: {{ $.Values.global.environment }}
+            team: {{ $.Values.global.team }}
+          annotations:
+            summary: "{{ $svc.label_app }} CrashLoopBackOff: {{ "{{" }} $labels.pod {{ "}}" }}"
+            description: "{{ $svc.label_app }} pod {{ "{{" }} $labels.pod {{ "}}" }} CrashLoopBackOff status."
+            runbook_url: {{ $.Values.global.runbook_url }}
+            dashboard_url: {{ $.Values.global.dashboard_url }}
+
+        - alert: {{ $name | replace "_" " " | title | replace " " "" }}HighErrorRateWarning
+          expr: |
+            (
+              sum(rate(istio_requests_total{
+                destination_service_name="{{ $svc.istio_destination }}",
+                destination_service_namespace="{{ $svc.istio_namespace }}",
+                response_code=~"5.."
+              }[5m]))
+              /
+              clamp_min(sum(rate(istio_requests_total{
+                destination_service_name="{{ $svc.istio_destination }}",
+                destination_service_namespace="{{ $svc.istio_namespace }}"
+              }[5m])), 0.001)
+            ) > {{ $.Values.layer6_application.thresholds.error_rate_warning }}
+          for: {{ $.Values.layer6_application.for.error_rate_warning }}
+          labels:
+            severity: warning
+            layer: application
+            component: {{ $svc.label_app }}
+            cluster: {{ $.Values.global.cluster }}
+            environment: {{ $.Values.global.environment }}
+            team: {{ $.Values.global.team }}
+          annotations:
+            summary: "{{ $svc.label_app }} Error Rate Warning: {{ "{{" }} $value | humanizePercentage {{ "}}" }}"
+            description: "{{ $svc.label_app }} 5xx error rate {{ "{{" }} $value | humanizePercentage {{ "}}" }}."
+            runbook_url: {{ $.Values.global.runbook_url }}
+            dashboard_url: {{ $.Values.global.dashboard_url }}
+
+        - alert: {{ $name | replace "_" " " | title | replace " " "" }}HighErrorRateCritical
+          expr: |
+            (
+              sum(rate(istio_requests_total{
+                destination_service_name="{{ $svc.istio_destination }}",
+                destination_service_namespace="{{ $svc.istio_namespace }}",
+                response_code=~"5.."
+              }[5m]))
+              /
+              clamp_min(sum(rate(istio_requests_total{
+                destination_service_name="{{ $svc.istio_destination }}",
+                destination_service_namespace="{{ $svc.istio_namespace }}"
+              }[5m])), 0.001)
+            ) > {{ $.Values.layer6_application.thresholds.error_rate_critical }}
+          for: {{ $.Values.layer6_application.for.error_rate_critical }}
+          labels:
+            severity: critical
+            layer: application
+            component: {{ $svc.label_app }}
+            cluster: {{ $.Values.global.cluster }}
+            environment: {{ $.Values.global.environment }}
+            team: {{ $.Values.global.team }}
+          annotations:
+            summary: "{{ $svc.label_app }} Error Rate Critical: {{ "{{" }} $value | humanizePercentage {{ "}}" }}"
+            description: "{{ $svc.label_app }} 5xx error rate {{ "{{" }} $value | humanizePercentage {{ "}}" }}. Immediate action required."
+            runbook_url: {{ $.Values.global.runbook_url }}
+            dashboard_url: {{ $.Values.global.dashboard_url }}
+
+        - alert: {{ $name | replace "_" " " | title | replace " " "" }}HighLatencyWarning
+          expr: |
+            histogram_quantile(0.99,
+              sum by (le) (
+                rate(istio_request_duration_milliseconds_bucket{
+                  destination_service_name="{{ $svc.istio_destination }}",
+                  destination_service_namespace="{{ $svc.istio_namespace }}"
+                }[5m])
+              )
+            ) / 1000 > {{ $.Values.layer6_application.thresholds.latency_p99_warning }}
+          for: {{ $.Values.layer6_application.for.latency_warning }}
+          labels:
+            severity: warning
+            layer: application
+            component: {{ $svc.label_app }}
+            cluster: {{ $.Values.global.cluster }}
+            environment: {{ $.Values.global.environment }}
+            team: {{ $.Values.global.team }}
+          annotations:
+            summary: "{{ $svc.label_app }} Latency p99 Warning: {{ "{{" }} $value | humanizeDuration {{ "}}" }}"
+            description: "{{ $svc.label_app }} p99  {{ "{{" }} $value | humanizeDuration {{ "}}" }}."
+            runbook_url: {{ $.Values.global.runbook_url }}
+            dashboard_url: {{ $.Values.global.dashboard_url }}
+
+        - alert: {{ $name | replace "_" " " | title | replace " " "" }}HighLatencyCritical
+          expr: |
+            histogram_quantile(0.99,
+              sum by (le) (
+                rate(istio_request_duration_milliseconds_bucket{
+                  destination_service_name="{{ $svc.istio_destination }}",
+                  destination_service_namespace="{{ $svc.istio_namespace }}"
+                }[5m])
+              )
+            ) / 1000 > {{ $.Values.layer6_application.thresholds.latency_p99_critical }}
+          for: {{ $.Values.layer6_application.for.latency_critical }}
+          labels:
+            severity: critical
+            layer: application
+            component: {{ $svc.label_app }}
+            cluster: {{ $.Values.global.cluster }}
+            environment: {{ $.Values.global.environment }}
+            team: {{ $.Values.global.team }}
+          annotations:
+            summary: "{{ $svc.label_app }} Latency p99 Critical: {{ "{{" }} $value | humanizeDuration {{ "}}" }}"
+            description: "{{ $svc.label_app }} p99  {{ "{{" }} $value | humanizeDuration {{ "}}" }}. Immediate action required."
+            runbook_url: {{ $.Values.global.runbook_url }}
+            dashboard_url: {{ $.Values.global.dashboard_url }}
+
+    {{- end }}
+    {{- end }}
+
+    # =========================================================================
+    # GROUP 2-B. hp-backend-worker
+    # =========================================================================
+    {{- if .Values.layer6_application.services.hp_backend_worker.enabled }}
+    - name: application.hp_backend_worker
+      rules:
+
+        - alert: HpBackendWorkerNotReady
+          expr: |
+            (
+              kube_deployment_spec_replicas{
+                namespace="{{ .Values.layer6_application.services.hp_backend_worker.namespace }}",
+                deployment="{{ .Values.layer6_application.services.hp_backend_worker.deployment }}"
+              }
+              != kube_deployment_status_replicas_available{
+                namespace="{{ .Values.layer6_application.services.hp_backend_worker.namespace }}",
+                deployment="{{ .Values.layer6_application.services.hp_backend_worker.deployment }}"
+              }
+            )
+          for: {{ .Values.layer6_application.for.pod_not_ready }}
+          labels:
+            severity: critical
+            layer: application
+            component: {{ .Values.layer6_application.services.hp_backend_worker.label_app }}
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "{{ .Values.layer6_application.services.hp_backend_worker.label_app }} Not Ready"
+            description: "{{ .Values.layer6_application.services.hp_backend_worker.label_app }} available replicas desired do not match."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: HpBackendWorkerPodCrashLoop
+          expr: |
+            max by (pod, container) (
+              kube_pod_container_status_waiting_reason{
+                namespace="{{ .Values.layer6_application.services.hp_backend_worker.namespace }}",
+                reason="CrashLoopBackOff"
+              }
+              * on(namespace, pod) group_left(label_app)
+              kube_pod_labels{
+                label_app="{{ .Values.layer6_application.services.hp_backend_worker.label_app }}"
+              }
+            ) == 1
+          for: {{ .Values.layer6_application.for.pod_crashloop }}
+          labels:
+            severity: critical
+            layer: application
+            component: {{ .Values.layer6_application.services.hp_backend_worker.label_app }}
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "{{ .Values.layer6_application.services.hp_backend_worker.label_app }} CrashLoopBackOff: {{ "{{" }} $labels.pod {{ "}}" }}"
+            description: "{{ .Values.layer6_application.services.hp_backend_worker.label_app }} pod {{ "{{" }} $labels.pod {{ "}}" }} CrashLoopBackOff status."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+    {{- end }}
+
+    # =========================================================================
+    # GROUP 3. hp-workers - metrics , enabled: true
+    # =========================================================================
+    {{- if .Values.layer6_application.services.hp_workers.enabled }}
+    - name: application.hp_workers
+      rules:
+
+        - alert: HpWorkersNotReady
+          expr: |
+            (
+              kube_deployment_spec_replicas{
+                namespace="{{ .Values.layer6_application.services.hp_workers.namespace }}",
+                deployment="{{ .Values.layer6_application.services.hp_workers.deployment }}"
+              }
+              != kube_deployment_status_replicas_available{
+                namespace="{{ .Values.layer6_application.services.hp_workers.namespace }}",
+                deployment="{{ .Values.layer6_application.services.hp_workers.deployment }}"
+              }
+            )
+          for: {{ .Values.layer6_application.for.pod_not_ready }}
+          labels:
+            severity: critical
+            layer: application
+            component: hp-workers
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "hp-workers Not Ready"
+            description: "hp-workers available replicas desired do not match."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: HpWorkersPodCrashLoop
+          expr: |
+            max by (pod, container) (
+              kube_pod_container_status_waiting_reason{
+                namespace="{{ .Values.layer6_application.services.hp_workers.namespace }}",
+                reason="CrashLoopBackOff"
+              }
+              * on(namespace, pod) group_left(label_app)
+              kube_pod_labels{
+                label_app="{{ .Values.layer6_application.services.hp_workers.label_app }}"
+              }
+            ) == 1
+          for: {{ .Values.layer6_application.for.pod_crashloop }}
+          labels:
+            severity: critical
+            layer: application
+            component: hp-workers
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "hp-workers CrashLoopBackOff: {{ "{{" }} $labels.pod {{ "}}" }}"
+            description: "hp-workers pod {{ "{{" }} $labels.pod {{ "}}" }} CrashLoopBackOff status."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+    {{- end }}
+
+    # =========================================================================
+    # GROUP 4. aiops-backend
+    # =========================================================================
+    {{- if .Values.layer6_application.services.aiops_backend.enabled }}
+    - name: application.aiops_backend
+      rules:
+
+        - alert: AiopsBackendNotReady
+          expr: |
+            (
+              kube_deployment_spec_replicas{
+                namespace="{{ .Values.layer6_application.services.aiops_backend.namespace }}",
+                deployment="{{ .Values.layer6_application.services.aiops_backend.deployment }}"
+              }
+              != kube_deployment_status_replicas_available{
+                namespace="{{ .Values.layer6_application.services.aiops_backend.namespace }}",
+                deployment="{{ .Values.layer6_application.services.aiops_backend.deployment }}"
+              }
+            )
+          for: {{ .Values.layer6_application.for.pod_not_ready }}
+          labels:
+            severity: critical
+            layer: application
+            component: aiops-backend
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "aiops-backend Not Ready"
+            description: "aiops-backend available replicas desired do not match."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: AiopsBackendPodCrashLoop
+          expr: |
+            max by (pod, container) (
+              kube_pod_container_status_waiting_reason{
+                namespace="{{ .Values.layer6_application.services.aiops_backend.namespace }}",
+                reason="CrashLoopBackOff"
+              }
+              * on(namespace, pod) group_left(label_app)
+              kube_pod_labels{
+                label_app="{{ .Values.layer6_application.services.aiops_backend.label_app }}"
+              }
+            ) == 1
+          for: {{ .Values.layer6_application.for.pod_crashloop }}
+          labels:
+            severity: critical
+            layer: application
+            component: aiops-backend
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "aiops-backend CrashLoopBackOff: {{ "{{" }} $labels.pod {{ "}}" }}"
+            description: "aiops-backend pod {{ "{{" }} $labels.pod {{ "}}" }} CrashLoopBackOff status."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: AiopsBackendHighErrorRateWarning
+          expr: |
+            (
+              sum(rate(aiops_requests_total{status_code=~"5.."}[5m]))
+              /
+              clamp_min(sum(rate(aiops_requests_total[5m])), 0.001)
+            ) > {{ .Values.layer6_application.thresholds.error_rate_warning }}
+          for: {{ .Values.layer6_application.for.error_rate_warning }}
+          labels:
+            severity: warning
+            layer: application
+            component: aiops-backend
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "aiops-backend Error Rate Warning: {{ "{{" }} $value | humanizePercentage {{ "}}" }}"
+            description: "aiops-backend 5xx error rate {{ "{{" }} $value | humanizePercentage {{ "}}" }}."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: AiopsBackendHighErrorRateCritical
+          expr: |
+            (
+              sum(rate(aiops_requests_total{status_code=~"5.."}[5m]))
+              /
+              clamp_min(sum(rate(aiops_requests_total[5m])), 0.001)
+            ) > {{ .Values.layer6_application.thresholds.error_rate_critical }}
+          for: {{ .Values.layer6_application.for.error_rate_critical }}
+          labels:
+            severity: critical
+            layer: application
+            component: aiops-backend
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "aiops-backend Error Rate Critical: {{ "{{" }} $value | humanizePercentage {{ "}}" }}"
+            description: "aiops-backend 5xx error rate {{ "{{" }} $value | humanizePercentage {{ "}}" }}. Immediate action required."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: AiopsBackendHighLatencyWarning
+          expr: |
+            histogram_quantile(0.99,
+              sum by (le) (
+                rate(aiops_request_duration_seconds_bucket[5m])
+              )
+            ) > {{ .Values.layer6_application.thresholds.latency_p99_warning }}
+          for: {{ .Values.layer6_application.for.latency_warning }}
+          labels:
+            severity: warning
+            layer: application
+            component: aiops-backend
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "aiops-backend Latency p99 Warning: {{ "{{" }} $value | humanizeDuration {{ "}}" }}"
+            description: "aiops-backend p99  {{ "{{" }} $value | humanizeDuration {{ "}}" }}."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: AiopsBackendHighLatencyCritical
+          expr: |
+            histogram_quantile(0.99,
+              sum by (le) (
+                rate(aiops_request_duration_seconds_bucket[5m])
+              )
+            ) > {{ .Values.layer6_application.thresholds.latency_p99_critical }}
+          for: {{ .Values.layer6_application.for.latency_critical }}
+          labels:
+            severity: critical
+            layer: application
+            component: aiops-backend
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "aiops-backend Latency p99 Critical: {{ "{{" }} $value | humanizeDuration {{ "}}" }}"
+            description: "aiops-backend p99  {{ "{{" }} $value | humanizeDuration {{ "}}" }}. Immediate action required."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: AiopsDbPoolExhausted
+          expr: |
+            aiops_db_pool_free == 0
+          for: 3m
+          labels:
+            severity: critical
+            layer: application
+            component: aiops-backend
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "aiops-backend DB Pool Exhausted"
+            description: "aiops-backend DB   . DB  pending  failed ."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+    {{- end }}
+
+{{- end }}

@@ -1,0 +1,15 @@
+plugins {
+	id 'org.springframework.boot' version '3.2.2' apply false
+	id 'io.spring.dependency-management' version '1.1.4' apply false
+        id "org.sonarqube" version "4.4.1.3373" // 소나큐브 플러그인
+}
+
+sonar {
+    properties {
+        property "sonar.projectKey", "hp-backend" // 소나큐브에 표시될 프로젝트 키
+        property "sonar.projectName", "hp-backend"
+        property "sonar.sources", "src/main/java"
+        property "sonar.binaries", "build/classes"
+        property "sonar.java.binaries", "build/classes"
+    }
+}

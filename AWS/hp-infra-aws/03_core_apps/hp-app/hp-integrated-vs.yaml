@@ -1,0 +1,100 @@
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: hp-integrated-vs  # 👈 3개를 하나로 통합한 이름
+  namespace: hp-core
+spec:
+  hosts:
+    - homeplate.site
+    - rum.homeplate.site
+  gateways:
+    - istio-system/homeplate-gateway
+  http:
+    # ------------------------------------------------------------
+    # 1. 인프라 공통 (가장 먼저 매칭)
+    # ------------------------------------------------------------
+    - name: rum-api
+      match:
+        - uri: { prefix: /cdn-cgi/rum }
+        - uri: { prefix: /collect }
+      route:
+        - destination:
+            host: alloy-collector.observability.svc.cluster.local
+            port: { number: 12347 }
+    - name: metrics-api
+      match:
+        - uri: { prefix: /v1/metrics }
+      route:
+        - destination:
+            host: otel-collector-metrics-opentelemetry-collector.observability.svc.cluster.local
+            port: { number: 4318 }
+
+    # ------------------------------------------------------------
+    # 2. QUEUE API (Core보다 먼저 매칭되어야 함!)
+    # ------------------------------------------------------------
+    - name: queue-api
+      match:
+        - uri:
+            prefix: /api/queue/
+      corsPolicy:
+        allowCredentials: true
+        allowHeaders: ["Content-Type", "Authorization", "traceparent", "tracestate", "baggage"]
+        allowMethods: ["GET", "POST", "OPTIONS"]
+        allowOrigins:
+          - exact: https://homeplate.site
+      route:
+        - destination:
+            host: hp-backend-queue-stable
+            port: { number: 8080 }
+          weight: 100
+        - destination:
+            host: hp-backend-queue-canary
+            port: { number: 8080 }
+          weight: 0
+
+    # ------------------------------------------------------------
+    # 3. BOOKING API (Core보다 먼저 매칭되어야 함!)
+    # ------------------------------------------------------------
+    - name: booking-api
+      match:
+        - uri:
+            prefix: /api/book/
+      corsPolicy:
+        allowCredentials: true
+        allowHeaders: ["Content-Type", "Authorization", "traceparent", "tracestate", "baggage"]
+        allowMethods: ["GET", "POST", "OPTIONS"]
+        allowOrigins:
+          - exact: https://homeplate.site
+      route:
+        - destination:
+            host: hp-backend-booking-stable
+            port: { number: 8080 }
+          weight: 100
+        - destination:
+            host: hp-backend-booking-canary
+            port: { number: 8080 }
+          weight: 0
+
+    # ------------------------------------------------------------
+    # 4. CORE API (가장 포괄적인 /api/ 이므로 무조건 맨 밑에 위치!)
+    # ------------------------------------------------------------
+    - name: core-api
+      match:
+        - uri: { prefix: /api/ }
+        - uri: { prefix: /oauth2/authorization/ }
+        - uri: { prefix: /login/oauth2/code/ }
+      corsPolicy:
+        allowCredentials: true
+        allowHeaders: ["Content-Type", "Authorization", "traceparent", "tracestate", "baggage"]
+        allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+        allowOrigins:
+          - exact: https://homeplate.site
+      route:
+        - destination:
+            host: hp-backend-core-stable
+            port: { number: 8080 }
+          weight: 100
+        - destination:
+            host: hp-backend-core-canary
+            port: { number: 8080 }
+          weight: 0

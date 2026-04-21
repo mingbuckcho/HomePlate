@@ -1,0 +1,36 @@
+# 파이썬 가상환경 (패키지가 수백 MB이므로 절대 커밋하면 안 된다)
+.venv/
+venv/
+env/
+
+# 파이썬 캐시 파일 (자동 생성되는 바이너리 파일)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 로컬 환경변수 파일
+# 비밀번호, API 키 등이 포함되므로 절대 커밋하면 안 된다
+.env
+
+# IDE 설정 파일
+.idea/
+.vscode/
+*.swp
+
+# OS가 자동으로 생성하는 파일
+.DS_Store      # macOS
+Thumbs.db      # Windows
+
+# 로그 파일
+*.log
+
+# pytest 캐시와 커버리지 결과
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 설치 패키지 파일 (.deb: Ubuntu 패키지)
+*.deb
+
+k8s/

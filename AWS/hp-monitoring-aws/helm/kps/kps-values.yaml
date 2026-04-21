@@ -1,0 +1,182 @@
+# kube-prometheus-stack (kps) - EKS용 values (SSM-only, Ingress OFF)
+fullnameOverride: "kps"
+
+prometheusOperator:
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: obs
+      effect: NoSchedule
+  nodeSelector:
+    nodepool: obs
+
+kube-state-metrics:
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: obs
+      effect: NoSchedule
+  nodeSelector:
+    nodepool: obs
+
+prometheus-node-exporter:
+  tolerations:
+    - key: dedicated
+      operator: Exists
+      effect: NoSchedule
+
+# -------------------------------
+# Grafana: UI(로그/트레이스 조회 포함)
+# - Ingress OFF: 외부공개 안 함
+# - admin 비번은 Secret "이름만" 참조(값 커밋 금지)
+# -------------------------------
+grafana:
+  enabled: true
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: obs
+      effect: NoSchedule
+  nodeSelector:
+    nodepool: obs
+
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+
+  replicaCount: 1
+
+  persistence:
+    enabled: true
+    storageClassName: gp3
+    size: 5Gi
+
+  ingress:
+    enabled: false
+
+  envFromSecret: grafana-oidc-secret
+
+  grafana.ini:
+    server:
+      root_url: https://grafana.homeplate.site
+
+    auth:
+      oauth_auto_login: true
+      disable_login_form: false
+      signout_redirect_url: https://auth.homeplate.site/realms/homeplate/protocol/openid-connect/logout?post_logout_redirect_uri=https%3A%2F%2Fgrafana.homeplate.site%2Flogin
+
+    auth.generic_oauth:
+      enabled: true
+      name: Keycloak
+      allow_sign_up: true
+      client_id: grafana
+      client_secret: $__env{GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET}
+      scopes: openid profile email
+      auth_url: https://auth.homeplate.site/realms/homeplate/protocol/openid-connect/auth
+      token_url: https://auth.homeplate.site/realms/homeplate/protocol/openid-connect/token
+      api_url: https://auth.homeplate.site/realms/homeplate/protocol/openid-connect/userinfo
+      login_attribute_path: preferred_username
+      name_attribute_path: name
+      email_attribute_path: email
+      role_attribute_path: >
+        contains(groups[*], 'hp-sre') && 'Admin' ||
+        contains(groups[*], 'hp-datasec') && 'Editor' ||
+        'Viewer'
+      use_pkce: true
+
+  sidecar:
+    datasources:
+      enabled: true
+      label: grafana_datasource
+      labelValue: "1"
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+
+# -------------------------------
+# Prometheus
+# -------------------------------
+prometheus:
+  prometheusSpec:
+    enableRemoteWriteReceiver: true
+    replicas: 2
+    retention: 15d
+    scrapeInterval: 30s
+    evaluationInterval: 30s
+    tolerations:
+      - key: dedicated
+        operator: Equal
+        value: obs
+        effect: NoSchedule
+    nodeSelector:
+      nodepool: obs
+    podAntiAffinity: hard
+    podAntiAffinityTopologyKey: topology.kubernetes.io/zone
+
+    resources:
+      requests:
+        cpu: 500m
+        memory: 2Gi
+      limits:
+        cpu: "2"
+        memory: 4Gi
+
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: gp3
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 50Gi
+
+    additionalScrapeConfigs: []
+    serviceMonitorNamespaceSelector: {}
+    podMonitorNamespaceSelector: {}
+    probeNamespaceSelector: {}
+    ruleNamespaceSelector: {}
+
+# -------------------------------
+# Alertmanager
+# -------------------------------
+alertmanager:
+  enabled: true
+  alertmanagerSpec:
+    replicas: 2
+    tolerations:
+      - key: dedicated
+        operator: Equal
+        value: obs
+        effect: NoSchedule
+    nodeSelector:
+      nodepool: obs
+    alertmanagerConfigMatcherStrategy:
+      type: None
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: gp3
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 2Gi
+
+kubeEtcd:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+
+defaultRules:
+  create: true
+  rules:
+    etcd: false
+    kubeProxy: false
+    kubeControllerManager: false
+    kubeSchedulerAlerting: false
+    kubeSchedulerRecording: false

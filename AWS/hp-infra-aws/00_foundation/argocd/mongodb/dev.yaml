@@ -1,0 +1,34 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: mongodb-dev
+  namespace: argocd
+spec:
+  project: default
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: mongodb
+
+  sources:
+    # 1) Helm chart source (Bitnami Helm repo)
+    - repoURL: https://charts.bitnami.com/bitnami
+      chart: mongodb
+      targetRevision: "18.6.1"
+      helm:
+        releaseName: mongodb
+        valueFiles:
+          - $values/02_datastore/mongodb/base/values-common.yaml
+          - $values/02_datastore/mongodb/overlays/dev/values.yaml
+
+    # 2) Values source (Git repo)
+    - repoURL: https://github.com/homeplate-project/hp-infra-aws.git
+      targetRevision: main                                    
+      ref: values
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

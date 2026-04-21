@@ -1,0 +1,16 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: sonarqube-vs
+  namespace: cicd
+spec:
+  hosts:
+  - "sonarqube.homeplate.site"
+  gateways:
+  - istio-system/homeplate-gateway # [주의] 프로젝트에서 사용하는 게이트웨이 이름으로 맞춰주세요.
+  http:
+  - route:
+    - destination:
+        host: sonarqube
+        port:
+          number: 9000

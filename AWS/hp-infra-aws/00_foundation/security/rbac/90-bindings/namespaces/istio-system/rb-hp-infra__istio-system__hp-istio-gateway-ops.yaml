@@ -1,0 +1,13 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rb-hp-infra__istio-system__hp-istio-gateway-ops
+  namespace: istio-system
+subjects:
+  - kind: Group
+    name: hp-infra
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: hp-istio-gateway-ops
+  apiGroup: rbac.authorization.k8s.io

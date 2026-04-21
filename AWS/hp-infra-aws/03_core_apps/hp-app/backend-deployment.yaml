@@ -1,0 +1,196 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hp-backend-worker
+  namespace: hp-core
+  labels:
+    app: hp-backend-worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: hp-backend-worker
+  template:
+    metadata:
+      labels:
+        app: hp-backend-worker
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/actuator/prometheus"
+        prometheus.io/port: "8080"
+    spec:
+      nodeSelector:
+        nodepool: data
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - hp-backend-worker # 👈 [수정 완료]
+              topologyKey: "kubernetes.io/hostname"
+      tolerations:
+        - key: "dedicated"
+          operator: "Equal"
+          value: "data"
+          effect: "NoSchedule"
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      volumes:
+        - name: kafka-user
+          secret:
+            secretName: ticketing-notification-client
+        - name: kafka-cluster-ca
+          secret:
+            secretName: ticketing-cluster-ca-cert
+        - name: kafka-certs-converted
+          emptyDir: {}
+
+      initContainers:
+      - name: kafka-cert-init
+        image: 681224237958.dkr.ecr.ap-northeast-2.amazonaws.com/hp-backend:v0.1.80
+        imagePullPolicy: Always
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+        command:
+        - sh
+        - -c
+        - |
+          keytool -import -trustcacerts \
+            -alias kafka-ca \
+            -file /opt/kafka/cluster-ca/ca.crt \
+            -keystore /opt/kafka/certs-converted/truststore.p12 \
+            -storetype PKCS12 \
+            -storepass changeit \
+            -noprompt
+          echo "✅ truststore.p12 생성 완료"
+        volumeMounts:
+        - name: kafka-certs-converted
+          mountPath: /opt/kafka/certs-converted
+        - name: kafka-cluster-ca
+          mountPath: /opt/kafka/cluster-ca
+          readOnly: true
+
+      containers:
+      - name: hp-backend-worker
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+        volumeMounts:
+          - name: kafka-user
+            mountPath: /opt/kafka/certs
+            readOnly: true
+          - name: kafka-certs-converted
+            mountPath: /opt/kafka/certs-converted
+            readOnly: true
+        image: 681224237958.dkr.ecr.ap-northeast-2.amazonaws.com/hp-backend:v0.1.80
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+        envFrom:
+        - secretRef:
+            name: hp-backend-secret
+        env:
+        - name: SPRING_PROFILES_ACTIVE
+          value: "prod,worker,booking"
+        
+        # 🚨 [추가 완료] 워커도 비밀번호를 알아야 죽지 않습니다!
+        - name: APP_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: hp-backend-secret
+              key: ADMIN_PASSWORD
+
+        # [모니터링 & 트레이싱 설정]
+        - name: OTEL_SERVICE_NAME
+          value: "hp-backend-worker"
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "http://alloy-collector.observability.svc.cluster.local:4318"
+        - name: OTEL_METRICS_EXPORTER
+          value: "none"
+        - name: OTEL_INSTRUMENTATION_LOGBACK_MDC_ENABLED
+          value: "true"
+        - name: OTEL_LOGS_EXPORTER
+          value: "none"
+
+        # [Kafka 연동 설정]
+        - name: TOPIC_NOTIFICATION
+          value: "ticketing-notification"
+        - name: SPRING_KAFKA_CONSUMER_GROUP_ID
+          value: "ticketing-notification-group"
+        - name: SPRING_KAFKA_BOOTSTRAP_SERVERS
+          value: "ticketing-kafka-bootstrap.kafka.svc.cluster.local:9093"
+        - name: SPRING_KAFKA_PROPERTIES_SECURITY_PROTOCOL
+          value: "SSL"
+        - name: SPRING_KAFKA_PROPERTIES_SSL_TRUSTSTORE_LOCATION
+          value: "/opt/kafka/certs-converted/truststore.p12"
+        - name: SPRING_KAFKA_PROPERTIES_SSL_TRUSTSTORE_TYPE
+          value: "PKCS12"
+        - name: SPRING_KAFKA_PROPERTIES_SSL_TRUSTSTORE_PASSWORD
+          value: "changeit"
+        - name: SPRING_KAFKA_PROPERTIES_SSL_KEYSTORE_LOCATION
+          value: "/opt/kafka/certs/user.p12"
+        - name: SPRING_KAFKA_PROPERTIES_SSL_KEYSTORE_TYPE
+          value: "PKCS12"
+        - name: SPRING_KAFKA_PROPERTIES_SSL_KEYSTORE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: ticketing-notification-client
+              key: user.password
+        - name: SPRING_KAFKA_PROPERTIES_SSL_KEY_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: ticketing-notification-client
+              key: user.password
+        - name: SPRING_KAFKA_PROPERTIES_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM
+          value: ""
+
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "256Mi"
+          limits:
+            cpu: "500m"
+            memory: "1Gi"
+        livenessProbe:
+          httpGet:
+            path: /actuator/health/liveness
+            port: 8080
+          initialDelaySeconds: 100
+          periodSeconds: 10
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: 8080
+          initialDelaySeconds: 100
+          periodSeconds: 10
+          timeoutSeconds: 5
+          
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hp-backend-worker
+  namespace: hp-core
+  labels:
+    app: hp-backend-worker
+spec:
+  type: ClusterIP
+  selector:
+    app: hp-backend-worker
+  ports:
+    - name: http
+      protocol: TCP
+      port: 8080
+      targetPort: 8080

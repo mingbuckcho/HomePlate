@@ -1,0 +1,18 @@
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: hp-crawl-result
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: ticketing
+spec:
+  # 실제 Kafka 토픽명 (K8s 리소스명과 다르게 점(.)을 포함할 수 있다)
+  topicName: hp.crawl.result
+  # dev는 브로커 1개이므로 partitions만 확보한다
+  # Worker replicas를 늘려도 partition 수 이상 늘려봐야 의미 없음
+  partitions: 3
+  replicas: 1
+  config:
+    # 24시간: Worker가 produce하고 Exporter가 소비하는 시간적 여유를 충분히 확보
+    retention.ms: "86400000"
+    compression.type: lz4

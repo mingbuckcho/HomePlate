@@ -1,0 +1,6 @@
+apiVersion: v2
+name: hp-monitors
+description: ServiceMonitor + metrics Service for hp-eks observability stack
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

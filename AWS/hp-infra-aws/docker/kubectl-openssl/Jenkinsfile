@@ -1,0 +1,86 @@
+pipeline {
+    agent {
+        kubernetes {
+            yaml """
+            apiVersion: v1
+            kind: Pod
+            spec:
+              serviceAccountName: kaniko-sa
+              containers:
+              - name: kaniko
+                image: gcr.io/kaniko-project/executor:debug
+                command:
+                - sleep
+                args:
+                - 9999999
+            """
+        }
+    }
+
+    environment {
+        AWS_ACCOUNT_ID = '681224237958'
+        AWS_REGION     = 'ap-northeast-2'
+        IMAGE_NAME     = 'kubectl-openssl'
+        IMAGE_TAG      = "v0.1.${BUILD_NUMBER}" // 프론트엔드와 동일한 형식
+        ECR_URL        = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+        
+        // 1. 업데이트할 3개 파일의 경로를 정확히 적어주세요 (현재 예상 경로입니다)
+        CORE_YAML    = "02_datastore/kafka/utils/hp-core/sync-kafkauser-secrets-cronjob.yaml"
+        WORKERS_YAML = "02_datastore/kafka/utils/hp-workers/sync-kafkauser-secrets-cronjob.yaml"
+        KEDA_YAML    = "02_datastore/kafka/utils/keda/sync-kafkauser-secrets-cronjob.yaml"
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Build & Push to ECR') {
+            steps {
+                container('kaniko') {
+                    script {
+                        sh '''
+                        mkdir -p /kaniko/.docker
+                        echo '{"credsStore":"ecr-login"}' > /kaniko/.docker/config.json
+                        '''
+                        sh """
+                        /kaniko/executor --context `pwd`/docker/kubectl-openssl \
+                            --dockerfile `pwd`/docker/kubectl-openssl/Dockerfile \
+                            --destination ${ECR_URL}/${IMAGE_NAME}:${IMAGE_TAG} \
+                            --destination ${ECR_URL}/${IMAGE_NAME}:latest
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Update All Manifests') {
+            steps {
+                script {
+                    // Git 사용자 설정
+                    sh "git config user.email 'jenkins@homeplate.com'"
+                    sh "git config user.name 'Jenkins-Bot'"
+
+                    // 2. 3개 파일을 순회하며 이미지 태그를 최신 버전으로 교체합니다.
+                    def targetFiles = [CORE_YAML, WORKERS_YAML, KEDA_YAML]
+                    
+                    for (file in targetFiles) {
+                        sh "echo 'Updating ${file} to ${IMAGE_TAG}...'"
+                        sh "sed -i 's|image: ${ECR_URL}/${IMAGE_NAME}:.*|image: ${ECR_URL}/${IMAGE_NAME}:${IMAGE_TAG}|g' ${file}"
+                    }
+
+                    // 3. 변경 사항을 Git에 커밋 및 푸시
+                    withCredentials([usernamePassword(credentialsId: 'github-credentials', passwordVariable: 'GIT_PASS', usernameVariable: 'GIT_USER')]) {
+                        sh """
+                            git add .
+                            git commit -m "Update ${IMAGE_NAME} to ${IMAGE_TAG} in all namespaces [skip ci]" || echo "No changes to commit"
+                            git push https://${GIT_USER}:${GIT_PASS}@github.com/homeplate-project/hp-infra-aws.git HEAD:main
+                        """
+                    }
+                }
+            }
+        }
+    }
+}

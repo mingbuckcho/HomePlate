@@ -1,0 +1,37 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kafka-ui
+  namespace: argocd # Application 리소스 자체는 argocd 네임스페이스에 위치
+spec:
+  project: default
+  
+  sources:
+    # 1. 외부 Helm 차트 (가져올 물건)
+    - repoURL: https://ui.charts.kafbat.io
+      chart: kafka-ui
+      targetRevision: 1.6.0
+      helm:
+        valueFiles:
+          - $values/02_datastore/kafka/utils/kafka-ui/values.yaml # 아래 'values' 소스를 참조
+
+    # 2. 내 Git 리포지토리 (설정값 + 추가 매니페스트)
+    - repoURL: https://github.com/homeplate-project/hp-infra-aws.git
+      targetRevision: HEAD
+      ref: values # 위 Helm 소스에서 $values로 호출할 수 있게 별칭 부여
+
+    - repoURL: https://github.com/homeplate-project/hp-infra-aws.git
+      targetRevision: HEAD
+      path: 02_datastore/kafka/utils/kafka-ui
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kafka # 실제 앱이 배포될 네임스페이스
+
+  # 🚀 자동화 정책 (이미 잘 작성하셨습니다!)
+  syncPolicy:
+    automated:
+      prune: true    # Git에서 삭제된 리소스를 실제 클러스터에서도 삭제
+      selfHeal: true # 클러스터에서 수동으로 바꾼 설정을 다시 Git 상태로 복구
+    syncOptions:
+      - CreateNamespace=true # kafka 네임스페이스가 없으면 자동 생성

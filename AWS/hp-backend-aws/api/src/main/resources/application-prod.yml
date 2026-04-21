@@ -1,0 +1,69 @@
+# [Prod] 운영/K8s 배포 환경
+server:
+  forward-headers-strategy: framework
+
+spring:
+  config:
+    activate:
+      on-profile: prod
+
+  # 1. 운영 DB (Master 241/Replica 242 라우팅)
+  datasource:
+    url: jdbc:mysql://${DB_MASTER_URL}?useUnicode=true&characterEncoding=utf8&connectionCollation=utf8mb4_unicode_ci
+    username: ${DB_USER}
+    password: ${DB_PASS}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+    master:
+      jdbc-url: jdbc:mysql://${DB_MASTER_URL}?useUnicode=true&characterEncoding=utf8&connectionCollation=utf8mb4_unicode_ci
+      username: ${DB_USER}
+      password: ${DB_PASS}
+    replica:
+      jdbc-url: jdbc:mysql://${DB_REPLICA_URL}?useUnicode=true&characterEncoding=utf8&connectionCollation=utf8mb4_unicode_ci
+      username: ${DB_USER}
+      password: ${DB_PASS}
+
+    hikari:
+      connection-init-sql: "SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci"
+      maximum-pool-size: 10
+      minimum-idle: 5
+      idle-timeout: 30000
+      max-lifetime: 1800000
+
+  # 2. 운영 Redis (Cluster 243, 244, 245)
+  data:
+    redis:
+      cluster:
+        nodes: ${REDIS_NODES}
+        max-redirects: 3
+
+  # 3. 운영 Kafka
+  kafka:
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS}
+    properties:
+      security.protocol: SSL
+      ssl.truststore.type: PKCS12
+      ssl.truststore.location: ${KAFKA_CERT_PATH}
+      ssl.truststore.password: ${KAFKA_CERT_PASSWORD}
+      ssl.keystore.type: PKCS12
+      ssl.keystore.location: ${KAFKA_CERT_PATH}
+      ssl.keystore.password: ${KAFKA_CERT_PASSWORD}
+      ssl.key.password: ${KAFKA_CERT_PASSWORD}
+      ssl.endpoint.identification.algorithm: ""
+
+  # 4. 운영 JPA (검증 모드 & 성능 최적화)
+  jpa:
+    hibernate:
+      ddl-auto: update  # 운영에선 절대 update 금지
+    properties:
+      hibernate:
+        format_sql: false
+        show_sql: false
+        dialect: org.hibernate.dialect.MariaDBDialect
+
+app:
+  kafka:
+    topic:
+      notification: ${TOPIC_NOTIFICATION}
+    consumer:
+      group-id: ${SPRING_KAFKA_CONSUMER_GROUP_ID}

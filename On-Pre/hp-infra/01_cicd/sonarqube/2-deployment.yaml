@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sonarqube
+  namespace: cicd
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sonarqube
+  template:
+    metadata:
+      labels:
+        app: sonarqube
+    spec:
+      # [수정] AWS EKS 노드 그룹 라벨 적용
+      nodeSelector:
+        nodepool: cicd
+      tolerations:  # [핵심] 방어막을 뚫는 VIP 패스
+        - key: "dedicated"
+          operator: "Equal"
+          value: "cicd"
+          effect: "NoSchedule"
+      
+      # [수정] ECR을 사용하므로 imagePullSecrets는 필요 없습니다 (IAM 권한으로 처리)
+      
+      initContainers:
+      - name: init-sysctl
+        image: busybox
+        command: ["sysctl", "-w", "vm.max_map_count=262144"]
+        securityContext:
+          privileged: true
+      - name: fix-permissions
+        image: busybox
+        command: ["sh", "-c", "chown -R 1000:1000 /opt/sonarqube/data"]
+        volumeMounts:
+        - name: sonarqube-data
+          mountPath: /opt/sonarqube/data
+        securityContext:
+          privileged: true
+      containers:
+      - name: sonarqube
+        image: sonarqube:lts-community
+        ports:
+        - containerPort: 9000
+        env:
+          - name: SONAR_WEB_SYSTEMPASSCODE
+            valueFrom:
+              secretKeyRef:
+                name: sonarqube-monitoring-auth
+                key: passcode
+        #- name: SONAR_JDBC_URL
+          # [수정] AWS RDS(PostgreSQL) 엔드포인트 주소 입력
+        #  value: "jdbc:postgresql://hp-sonar-db.xxxxxx.ap-northeast-2.rds.amazonaws.com:5432/sonar"
+        #- name: SONAR_JDBC_USERNAME
+        #  value: "sonar"
+        #- name: SONAR_JDBC_PASSWORD
+          # [보안] 나중에는 AWS Secrets Manager를 쓰는 것이 좋지만, 일단은 평문 유지
+        #  value: "sonar_rds_password" 
+        resources:
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+          requests:
+            memory: "1.5Gi"
+            cpu: "500m"
+        volumeMounts:
+        - name: sonarqube-data
+          mountPath: /opt/sonarqube/data
+      volumes:
+      - name: sonarqube-data
+        persistentVolumeClaim:
+          claimName: sonarqube-pvc

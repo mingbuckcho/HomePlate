@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: istio-ingress-metrics
+  namespace: istio-system
+  labels:
+    app: istio-ingress
+    istio: ingress
+spec:
+  selector:
+    app: istio-ingress
+    istio: ingress
+  ports:
+    - name: http-envoy-prom
+      port: 15090
+      targetPort: http-envoy-prom

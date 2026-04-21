@@ -1,0 +1,172 @@
+pipeline {
+    agent {
+        kubernetes {
+            yaml """
+            apiVersion: "v1"
+            kind: "Pod"
+            spec:
+              serviceAccountName: "kaniko-sa"
+              nodeSelector:
+                nodepool: "app"
+              tolerations:
+              - key: "dedicated"
+                operator: "Exists"
+                effect: "NoSchedule"
+              containers:
+              - name: "gradle"
+                image: "gradle:8.5-jdk17"
+                command: ["cat"]
+                tty: true
+                resources:
+                  requests: { memory: "256Mi", cpu: "100m" } 
+                  limits: { memory: "1Gi", cpu: "1000m" }
+              - name: "kaniko"
+                image: "gcr.io/kaniko-project/executor:debug"
+                command: ["sleep"]
+                args: ["9999999"]
+                securityContext:
+                  runAsUser: 0
+                  allowPrivilegeEscalation: true
+                resources:
+                  requests: { cpu: "50m", memory: "128Mi" }
+                  limits: { cpu: "500m", memory: "512Mi" }
+              - name: "jnlp"
+                image: "jenkins/inbound-agent:3355.v388858a_47b_33-3-jdk21"
+                resources:
+                  requests: { cpu: "50m", memory: "128Mi" }
+                  limits: { cpu: "200m", memory: "256Mi" }
+            """
+        }
+    }
+
+    environment {
+        AWS_ACCOUNT_ID = "681224237958"
+        AWS_REGION     = "ap-northeast-2"
+        ECR_URL        = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+        IMAGE_NAME     = "hp-backend"
+        IMAGE_TAG      = "v0.1.${env.BUILD_NUMBER}"
+        GITHUB_CREDS_ID = "github-credentials"
+        MANIFEST_PATH  = "03_core_apps/hp-app/backend-deployment.yaml"
+        SONAR_SERVER    = "SonarQube-Server"
+    }
+
+    stages {
+        stage('Checkout SCM') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('0. Check Changes') {
+            steps {
+                echo "Checking for source code changes in ${env.JOB_NAME}..."
+            }
+        }
+
+        stage('1. Prepare & Unit Test') {
+            steps {
+                container('gradle') {
+                    sh 'chmod +x gradlew'
+                    sh './gradlew clean build -x test'
+                }
+            }
+        }
+
+        // 🚀 [추가] 시연 영상을 위해 별도 단계로 분리된 소나큐브 분석
+        stage('SonarQube Analysis') {
+            steps {
+                container('gradle') {
+                    withSonarQubeEnv("${env.SONAR_SERVER}") {
+                        sh './gradlew sonar -Dsonar.inclusions=**/*.java,**/*.yaml,**/*.yml'
+                    }
+                }
+            }
+        }
+
+        // 🚀 [추가] 시연 영상을 위해 별도 단계로 분리된 퀄리티 게이트 대기
+        stage('Quality Gate') {
+            steps {
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+
+        stage('2. Build & Push to ECR') {
+            steps {
+                container('kaniko') {
+                    withCredentials([usernamePassword(credentialsId: 'aws-credentials', passwordVariable: 'AWS_SECRET_ACCESS_KEY', usernameVariable: 'AWS_ACCESS_KEY_ID')]) {
+                        script {
+                            sh '''
+                            mkdir -p /kaniko/.docker
+                            echo '{"credsStore":"ecr-login"}' > /kaniko/.docker/config.json
+                            '''
+                            sh """
+                            /kaniko/executor --context `pwd` \
+                                --dockerfile `pwd`/Dockerfile \
+                                --destination ${ECR_URL}/${IMAGE_NAME}:${IMAGE_TAG} \
+                                --destination ${ECR_URL}/${IMAGE_NAME}:latest \
+                                --cache=true
+                            """
+                        }    
+                    }
+                }
+            }
+        }
+
+        stage('3. Update Manifests') {
+            steps {
+                container('jnlp') {
+                    script {
+                        withCredentials([usernamePassword(credentialsId: "${GITHUB_CREDS_ID}", passwordVariable: 'GIT_TOKEN', usernameVariable: 'GIT_ID')]) {
+                            sh """
+                            git config --global user.name "Jenkins CI"
+                            git config --global user.email "jenkins@homeplate.com"
+                            git clone https://${GIT_ID}:${GIT_TOKEN}@github.com/homeplate-project/hp-infra-aws.git
+                            cd hp-infra-aws
+                            sed -i "s|image: .*/${IMAGE_NAME}:.*|image: ${ECR_URL}/${IMAGE_NAME}:${IMAGE_TAG}|g" 03_core_apps/hp-app/*.yaml
+                            
+                            if [ -n "\$(git status --porcelain)" ]; then
+                                git add 03_core_apps/hp-app/*.yaml
+                                git commit -m "chore(ci): update image to ${IMAGE_TAG} [skip ci]"
+                                git push origin main
+                            else
+                                echo "No changes detected."
+                            fi
+                            """
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            script {
+                slackSend(
+                    color: 'good', 
+                    message: """
+✅ *[배포 성공]* - ${env.JOB_NAME} (#${env.BUILD_NUMBER})
+• *결과:* 모든 파이프라인 단계가 성공적으로 완료되었습니다.
+👉 <${env.BUILD_URL}|젠킨스에서 자세히 보기>
+"""
+                )
+            }
+        }
+        failure {
+            script {
+                slackSend(
+                    color: 'danger', 
+                    message: """
+🚨 *[Quality Gate Failed]* - ${env.JOB_NAME} (#${env.BUILD_NUMBER})
+• *사유:* 코드 품질 기준 미달 (버그/취약점/커버리지 확인 필요)
+• *결과:* 배포 프로세스가 즉시 중단되었습니다. 🛑
+👉 <${env.BUILD_URL}|젠킨스에서 자세히 보기>
+👉 <https://sonarqube.homeplate.site|소나큐브 대시보드 확인>
+"""
+                )
+            }
+        }
+    }
+}

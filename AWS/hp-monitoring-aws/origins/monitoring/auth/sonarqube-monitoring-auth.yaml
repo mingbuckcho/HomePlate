@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: sonarqube-monitoring-auth
+  namespace: cicd
+type: Opaque
+stringData:
+  passcode: "dump"

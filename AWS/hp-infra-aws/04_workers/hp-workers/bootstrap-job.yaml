@@ -1,0 +1,56 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: hp-bootstrap
+  namespace: hp-workers
+  annotations:
+    # ArgoCD가 실제 앱을 배포(Sync)하기 직전에 이 Job을 먼저 실행함
+    argocd.argoproj.io/hook: PreSync
+    # Job이 성공적으로 끝나면 클러스터에서 Job 오브젝트를 자동으로 삭제함
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation, HookSucceeded
+spec:
+  backoffLimit: 3
+  completions: 1
+  parallelism: 1
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      serviceAccountName: s3-thumbnails-sa
+      nodeSelector:
+        nodepool: app
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: hp-bootstrap
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          image: "681224237958.dkr.ecr.ap-northeast-2.amazonaws.com/hp-ingestion:v0.1.3"
+          # bootstrap_mongo → bootstrap_s3 → seed 순서로 실행
+          command:
+            - python
+            - -c
+            - |
+              from app.bootstrap_mongo import bootstrap as mongo_bootstrap
+              from app.bootstrap_s3 import bootstrap as s3_bootstrap
+              from app.seed import seed
+              mongo_bootstrap()
+              s3_bootstrap()
+              seed()
+          envFrom:
+            - configMapRef:
+                name: hp-config
+            - secretRef:
+                name: hp-app-secret        # MONGO_PASSWORD (svc-crawler)
+            - secretRef:
+                name: hp-bootstrap-secret  # MONGO_ROOT_USER, MONGO_ROOT_PASSWORD, MONGO_EXPORTER_PASSWORD
+            - secretRef:
+                name: hp-rds-secret        # MYSQL_USER, MYSQL_PASSWORD
+      restartPolicy: Never

@@ -1,0 +1,437 @@
+{{- if .Values.layer4_observability.enabled }}
+# =============================================================================
+# Layer 4 - Observability
+# targets: Prometheus, Alertmanager, Grafana,
+#       Loki (write/read/backend/gateway),
+#       Tempo (distributor/ingester/querier/query-frontend/compactor),
+#       Alloy collector, Alloy logs
+# =============================================================================
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: layer-observability-rules
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    release: {{ .Values.global.releaseLabel }}
+    layer: observability
+spec:
+  groups:
+
+    # =========================================================================
+    # GROUP 1. Prometheus
+    # =========================================================================
+    - name: observability.prometheus
+      rules:
+
+        - alert: PrometheusDown
+          expr: up{job="kps-prometheus"} == 0
+          for: {{ .Values.layer4_observability.for.prometheus_down }}
+          labels:
+            severity: critical
+            layer: observability
+            component: prometheus
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Prometheus Down"
+            description: "Prometheus is not responding.  metrics    in progress."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        # ScrapeTargetDown(Layer1)  : observability  job
+        - alert: PrometheusTargetDownWarning
+          expr: |
+            count(
+              up{job=~"kps-prometheus|kps-alertmanager|kps-grafana|observability/.+|alloy-.+"} == 0
+            ) > {{ .Values.layer4_observability.thresholds.prometheus_target_down_warning }}
+          for: {{ .Values.layer4_observability.for.prometheus_target_warning }}
+          labels:
+            severity: warning
+            layer: observability
+            component: prometheus
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Observability Target Down Warning: {{ "{{" }} $value {{ "}}" }}"
+            description: "observability   scrape  {{ "{{" }} $value {{ "}}" }} down status."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: PrometheusTargetDownCritical
+          expr: |
+            count(
+              up{job=~"kps-prometheus|kps-alertmanager|kps-grafana|observability/.+|alloy-.+"} == 0
+            ) > {{ .Values.layer4_observability.thresholds.prometheus_target_down_critical }}
+          for: {{ .Values.layer4_observability.for.prometheus_target_critical }}
+          labels:
+            severity: critical
+            layer: observability
+            component: prometheus
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Observability Target Down Critical: {{ "{{" }} $value {{ "}}" }}"
+            description: "observability   scrape  {{ "{{" }} $value {{ "}}" }} down status.    occurred."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: PrometheusConfigReloadFailed
+          expr: prometheus_config_last_reload_successful == 0
+          for: 5m
+          labels:
+            severity: warning
+            layer: observability
+            component: prometheus
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Prometheus Config Reload Failed"
+            description: "Prometheus    failed.      ."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+    # =========================================================================
+    # GROUP 2. Alertmanager
+    # =========================================================================
+    - name: observability.alertmanager
+      rules:
+
+        - alert: AlertmanagerDown
+          expr: up{job="kps-alertmanager"} == 0
+          for: {{ .Values.layer4_observability.for.alertmanager_down }}
+          labels:
+            severity: critical
+            layer: observability
+            component: alertmanager
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Alertmanager Down"
+            description: "Alertmanager is not responding.   Slack  ."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: AlertmanagerConfigReloadFailed
+          expr: alertmanager_config_last_reload_successful == 0
+          for: 5m
+          labels:
+            severity: warning
+            layer: observability
+            component: alertmanager
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Alertmanager Config Reload Failed"
+            description: "Alertmanager   failed.      ."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+    # =========================================================================
+    # GROUP 3. Grafana
+    # =========================================================================
+    - name: observability.grafana
+      rules:
+
+        - alert: GrafanaDown
+          expr: up{job="kps-grafana"} == 0
+          for: {{ .Values.layer4_observability.for.grafana_down }}
+          labels:
+            severity: warning
+            layer: observability
+            component: grafana
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Grafana Down"
+            description: "Grafana is not responding.   ."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+    # =========================================================================
+    # GROUP 4. Loki
+    # =========================================================================
+    - name: observability.loki
+      rules:
+
+        - alert: LokiWriteDown
+          expr: up{job="observability/loki-write"} == 0
+          for: {{ .Values.layer4_observability.for.loki_write_down }}
+          labels:
+            severity: critical
+            layer: observability
+            component: loki-write
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Loki Write Down"
+            description: "Loki Write  is not responding.   in progress."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: LokiReadDown
+          expr: up{job="observability/loki-read"} == 0
+          for: {{ .Values.layer4_observability.for.loki_read_down }}
+          labels:
+            severity: critical
+            layer: observability
+            component: loki-read
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Loki Read Down"
+            description: "Loki Read  is not responding. Grafana   ."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: LokiBackendDown
+          expr: up{job="observability/loki-backend"} == 0
+          for: {{ .Values.layer4_observability.for.loki_backend_down }}
+          labels:
+            severity: critical
+            layer: observability
+            component: loki-backend
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Loki Backend Down"
+            description: "Loki Backend(Ruler/Compactor)  is not responding."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        # LokiGatewayDown  - job  (loki-canary/chunks-cache/results-cache  )
+
+        - alert: LokiHighErrorRateWarning
+          expr: |
+            (
+              sum(rate(loki_request_duration_seconds_count{status_code=~"5.."}[5m]))
+              /
+              clamp_min(sum(rate(loki_request_duration_seconds_count[5m])), 0.001)
+            ) > {{ .Values.layer4_observability.thresholds.loki_error_rate_warning }}
+          for: {{ .Values.layer4_observability.for.loki_error_warning }}
+          labels:
+            severity: warning
+            layer: observability
+            component: loki-write
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Loki Error Rate Warning: {{ "{{" }} $value | humanizePercentage {{ "}}" }}"
+            description: "Loki  error rate {{ "{{" }} $value | humanizePercentage {{ "}}" }}."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: LokiHighErrorRateCritical
+          expr: |
+            (
+              sum(rate(loki_request_duration_seconds_count{status_code=~"5.."}[5m]))
+              /
+              clamp_min(sum(rate(loki_request_duration_seconds_count[5m])), 0.001)
+            ) > {{ .Values.layer4_observability.thresholds.loki_error_rate_critical }}
+          for: {{ .Values.layer4_observability.for.loki_error_critical }}
+          labels:
+            severity: critical
+            layer: observability
+            component: loki-write
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Loki Error Rate Critical: {{ "{{" }} $value | humanizePercentage {{ "}}" }}"
+            description: "Loki  error rate {{ "{{" }} $value | humanizePercentage {{ "}}" }}.    ."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+    # =========================================================================
+    # GROUP 5. Tempo
+    # =========================================================================
+    - name: observability.tempo
+      rules:
+
+        - alert: TempoDistributorDown
+          expr: up{job="observability/distributor"} == 0
+          for: {{ .Values.layer4_observability.for.tempo_distributor_down }}
+          labels:
+            severity: critical
+            layer: observability
+            component: tempo-distributor
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Tempo Distributor Down"
+            description: "Tempo Distributor is not responding.   in progress."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: TempoIngesterDown
+          expr: up{job="observability/ingester"} == 0
+          for: {{ .Values.layer4_observability.for.tempo_ingester_down }}
+          labels:
+            severity: critical
+            layer: observability
+            component: tempo-ingester
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Tempo Ingester Down"
+            description: "Tempo Ingester is not responding.    in progress."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: TempoQuerierDown
+          expr: up{job="observability/querier"} == 0
+          for: {{ .Values.layer4_observability.for.tempo_querier_down }}
+          labels:
+            severity: critical
+            layer: observability
+            component: tempo-querier
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Tempo Querier Down"
+            description: "Tempo Querier is not responding. Grafana   ."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: TempoQueryFrontendDown
+          expr: up{job="observability/query-frontend"} == 0
+          for: {{ .Values.layer4_observability.for.tempo_query_frontend_down }}
+          labels:
+            severity: critical
+            layer: observability
+            component: tempo-query-frontend
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Tempo Query Frontend Down"
+            description: "Tempo Query Frontend is not responding.    ."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: TempoCompactorDown
+          expr: up{job="observability/compactor"} == 0
+          for: {{ .Values.layer4_observability.for.tempo_compactor_down }}
+          labels:
+            severity: warning
+            layer: observability
+            component: tempo-compactor
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Tempo Compactor Down"
+            description: "Tempo Compactor is not responding.     retention in progress."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: TempoHighErrorRateWarning
+          expr: |
+            (
+              sum(rate(tempo_request_duration_seconds_count{status_code=~"5.."}[5m]))
+              /
+              clamp_min(sum(rate(tempo_request_duration_seconds_count[5m])), 0.001)
+            ) > {{ .Values.layer4_observability.thresholds.tempo_error_rate_warning }}
+          for: {{ .Values.layer4_observability.for.tempo_error_warning }}
+          labels:
+            severity: warning
+            layer: observability
+            component: tempo-distributor
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Tempo Error Rate Warning: {{ "{{" }} $value | humanizePercentage {{ "}}" }}"
+            description: "Tempo  error rate {{ "{{" }} $value | humanizePercentage {{ "}}" }}."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: TempoHighErrorRateCritical
+          expr: |
+            (
+              sum(rate(tempo_request_duration_seconds_count{status_code=~"5.."}[5m]))
+              /
+              clamp_min(sum(rate(tempo_request_duration_seconds_count[5m])), 0.001)
+            ) > {{ .Values.layer4_observability.thresholds.tempo_error_rate_critical }}
+          for: {{ .Values.layer4_observability.for.tempo_error_critical }}
+          labels:
+            severity: critical
+            layer: observability
+            component: tempo-distributor
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Tempo Error Rate Critical: {{ "{{" }} $value | humanizePercentage {{ "}}" }}"
+            description: "Tempo  error rate {{ "{{" }} $value | humanizePercentage {{ "}}" }}.    ."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+    # =========================================================================
+    # GROUP 6. Alloy
+    # =========================================================================
+    - name: observability.alloy
+      rules:
+
+        - alert: AlloyCollectorDown
+          expr: up{job="alloy-collector"} == 0
+          for: {{ .Values.layer4_observability.for.alloy_collector_down }}
+          labels:
+            severity: critical
+            layer: observability
+            component: alloy-collector
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Alloy Collector Down"
+            description: "Alloy Collector is not responding. RUM/OTLP    in progress."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: AlloyLogsDown
+          expr: up{job="alloy-logs"} == 0
+          for: {{ .Values.layer4_observability.for.alloy_logs_down }}
+          labels:
+            severity: critical
+            layer: observability
+            component: alloy-logs
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Alloy Logs Down: {{ "{{" }} $labels.instance {{ "}}" }}"
+            description: "Alloy Logs DaemonSet {{ "{{" }} $labels.instance {{ "}}" }} is not responding.  node pod   in progress."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: AlloyConfigLoadFailed
+          expr: alloy_config_last_load_successful == 0
+          for: 5m
+          labels:
+            severity: warning
+            layer: observability
+            component: alloy-collector
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Alloy Config Load Failed: {{ "{{" }} $labels.instance {{ "}}" }}"
+            description: "Alloy {{ "{{" }} $labels.instance {{ "}}" }}   failed.      ."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+{{- end }}

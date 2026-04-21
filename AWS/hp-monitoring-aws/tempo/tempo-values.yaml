@@ -1,0 +1,165 @@
+# ============================================================================
+# EKS Tempo (grafana/tempo-distributed) - 2AZ + S3 + IRSA + OTLP ingest
+# - 저장: S3(trace blocks)
+# - 로컬: ingester WAL(PVC)
+# - 접근: 외부 노출 없음(ClusterIP). Grafana는 SSM port-forward 전제
+# ============================================================================
+
+global:
+  storageClass: gp3
+
+# chunks cache(memcached) 리소스
+chunksCache:
+  allocatedMemory: 1024
+  resources:
+    requests:
+      cpu: 100m
+      memory: 1256Mi
+    limits:
+      cpu: 500m
+      memory: 1536Mi
+
+memcached:
+  nodeSelector:
+    nodepool: obs
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: obs
+      effect: NoSchedule
+
+# IRSA: S3 접근용 IAM Role (값은 네가 채움)
+serviceAccount:
+  create: true
+  name: tempo
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::681224237958:role/hp-eks-tempo-s3-role
+
+# OTLP 수신(4317/4318)
+traces:
+  otlp:
+    grpc:
+      enabled: true
+      port: 4317
+    http:
+      enabled: true
+
+# S3 저장소(Tempo trace backend)
+storage:
+  trace:
+    backend: s3
+    s3:
+      bucket: hp-tempo-traces                 # 예: hp-tempo-traces
+      region: ap-northeast-2
+      endpoint: s3.ap-northeast-2.amazonaws.com
+      insecure: false
+
+# -----------------------------
+# Ingester: 2AZ 분산 + WAL PVC
+# -----------------------------
+ingester:
+  nodeSelector:
+    nodepool: obs
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: obs
+      effect: NoSchedule
+  replicas: 2
+  config:
+    replication_factor: 2
+  persistence:
+    enabled: true
+    size: 20Gi
+    storageClass: gp3
+  affinity: |
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              {{- include "tempo.selectorLabels" (dict "ctx" . "component" "ingester") | nindent 14 }}
+          topologyKey: topology.kubernetes.io/zone
+
+# -----------------------------------------
+# Distributor / Querier / QueryFrontend
+# - replicas 2
+# - 2AZ hard anti-affinity
+# -----------------------------------------
+distributor:
+  nodeSelector:
+    nodepool: obs
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: obs
+      effect: NoSchedule
+  replicas: 2
+  affinity: |
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              {{- include "tempo.selectorLabels" (dict "ctx" . "component" "distributor") | nindent 14 }}
+          topologyKey: topology.kubernetes.io/zone
+
+querier:
+  nodeSelector:
+    nodepool: obs
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: obs
+      effect: NoSchedule
+  replicas: 2
+  affinity: |
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              {{- include "tempo.selectorLabels" (dict "ctx" . "component" "querier") | nindent 14 }}
+          topologyKey: topology.kubernetes.io/zone
+
+queryFrontend:
+  nodeSelector:
+    nodepool: obs
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: obs
+      effect: NoSchedule
+  replicas: 2
+  affinity: |
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              {{- include "tempo.selectorLabels" (dict "ctx" . "component" "query-frontend") | nindent 14 }}
+          topologyKey: topology.kubernetes.io/zone
+
+# -----------------------------
+# Compactor: retention(15d)
+# -----------------------------
+compactor:
+  nodeSelector:
+    nodepool: obs
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: obs
+      effect: NoSchedule
+  replicas: 1
+  config:
+    compaction:
+      block_retention: 360h              # 15d
+      compacted_block_retention: 24h
+
+# 외부 노출 안 함
+gateway:
+  enabled: false
+
+# KPS(Prometheus-Operator)로 Tempo 메트릭 수집
+metaMonitoring:
+  serviceMonitor:
+    enabled: true
+    labels:
+      release: kps

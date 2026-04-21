@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: keycloak-external-secrets-sa
+  namespace: keycloak
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::681224237958:role/keycloak-external-secrets-role
+    # 네임스페이스 다음으로 생성되어야 합니다.
+    argocd.argoproj.io/sync-wave: "-4"

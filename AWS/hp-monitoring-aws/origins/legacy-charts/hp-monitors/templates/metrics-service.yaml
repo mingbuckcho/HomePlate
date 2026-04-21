@@ -1,0 +1,25 @@
+{{- range .Values.metricsServices }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .name }}
+  namespace: {{ .namespace }}
+  labels:
+    release: {{ $.Values.defaults.release }}
+    {{- range $k, $v := .selector }}
+    {{ $k }}: {{ $v }}
+    {{- end }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- range $k, $v := .selector }}
+    {{ $k }}: {{ $v }}
+    {{- end }}
+  ports:
+    {{- range .ports }}
+    - name: {{ .name }}
+      port: {{ .port }}
+      targetPort: {{ .targetPort }}
+    {{- end }}
+{{- end }}

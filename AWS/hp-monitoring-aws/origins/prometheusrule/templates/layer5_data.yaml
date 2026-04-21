@@ -1,0 +1,733 @@
+{{- if .Values.layer5_data.enabled }}
+# =============================================================================
+# Layer 5 - Data
+# targets: RDS MariaDB (mysqld-exporter), ElastiCache Redis (redis-exporter),
+#       RDS CloudWatch (YACE: aws_rds_*)
+# =============================================================================
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: layer-data-rules
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    release: {{ .Values.global.releaseLabel }}
+    layer: data
+spec:
+  groups:
+
+    # =========================================================================
+    # GROUP 1. mysqld-exporter status
+    # =========================================================================
+    - name: data.mysqld_exporter
+      rules:
+
+        - alert: MysqldExporterDown
+          expr: up{job=~"mysqld-exporter.*"} == 0
+          for: {{ .Values.layer5_data.for.mariadb_exporter_down }}
+          labels:
+            severity: critical
+            layer: data
+            component: mysqld-exporter
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "mysqld-exporter Down: {{ "{{" }} $labels.job {{ "}}" }}"
+            description: "{{ "{{" }} $labels.job {{ "}}" }} mysqld-exporter is not responding. MariaDB  metrics  in progress."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+    # =========================================================================
+    # GROUP 2. MariaDB (mysqld-exporter metrics)
+    # =========================================================================
+    - name: data.mariadb
+      rules:
+
+        - alert: MariaDBConnectionHighWarning
+          expr: |
+            (
+              mysql_global_status_threads_connected
+              / mysql_global_variables_max_connections
+            ) > {{ .Values.layer5_data.thresholds.mariadb_conn_ratio_warning }}
+          for: {{ .Values.layer5_data.for.mariadb_conn_warning }}
+          labels:
+            severity: warning
+            layer: data
+            component: rds-mariadb
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "MariaDB Connection High Warning: {{ "{{" }} $labels.instance {{ "}}" }}"
+            description: "{{ "{{" }} $labels.instance {{ "}}" }} connection usage {{ "{{" }} $value | humanizePercentage {{ "}}" }}. max_connections  {{ .Values.layer5_data.thresholds.mariadb_conn_ratio_warning | mulf 100 }}% above threshold."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: MariaDBConnectionHighCritical
+          expr: |
+            (
+              mysql_global_status_threads_connected
+              / mysql_global_variables_max_connections
+            ) > {{ .Values.layer5_data.thresholds.mariadb_conn_ratio_critical }}
+          for: {{ .Values.layer5_data.for.mariadb_conn_critical }}
+          labels:
+            severity: critical
+            layer: data
+            component: rds-mariadb
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "MariaDB Connection High Critical: {{ "{{" }} $labels.instance {{ "}}" }}"
+            description: "{{ "{{" }} $labels.instance {{ "}}" }} connection usage {{ "{{" }} $value | humanizePercentage {{ "}}" }}.   ."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: MariaDBReplicaIOStopped
+          expr: |
+            mysql_slave_status_replica_io_running == 0
+          for: {{ .Values.layer5_data.for.mariadb_replica_io_stopped }}
+          labels:
+            severity: critical
+            layer: data
+            component: rds-mariadb
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "MariaDB Replica IO Thread Stopped: {{ "{{" }} $labels.instance {{ "}}" }}"
+            description: "{{ "{{" }} $labels.instance {{ "}}" }} Replica IO Thread stopped. Master binlog ingestion ."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: MariaDBReplicaSQLStopped
+          expr: |
+            mysql_slave_status_replica_sql_running == 0
+          for: {{ .Values.layer5_data.for.mariadb_replica_sql_stopped }}
+          labels:
+            severity: critical
+            layer: data
+            component: rds-mariadb
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "MariaDB Replica SQL Thread Stopped: {{ "{{" }} $labels.instance {{ "}}" }}"
+            description: "{{ "{{" }} $labels.instance {{ "}}" }} Replica SQL Thread stopped. replication in progress status."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: MariaDBReplicaLagWarning
+          expr: |
+            mysql_slave_status_seconds_behind_source
+            > {{ .Values.layer5_data.thresholds.mariadb_replica_lag_warning }}
+          for: {{ .Values.layer5_data.for.mariadb_replica_lag_warning }}
+          labels:
+            severity: warning
+            layer: data
+            component: rds-mariadb
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "MariaDB Replica Lag Warning: {{ "{{" }} $labels.instance {{ "}}" }}"
+            description: "{{ "{{" }} $labels.instance {{ "}}" }} Replica Lag {{ "{{" }} $value {{ "}}" }}. threshold: {{ .Values.layer5_data.thresholds.mariadb_replica_lag_warning }}"
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: MariaDBReplicaLagCritical
+          expr: |
+            mysql_slave_status_seconds_behind_source
+            > {{ .Values.layer5_data.thresholds.mariadb_replica_lag_critical }}
+          for: {{ .Values.layer5_data.for.mariadb_replica_lag_critical }}
+          labels:
+            severity: critical
+            layer: data
+            component: rds-mariadb
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "MariaDB Replica Lag Critical: {{ "{{" }} $labels.instance {{ "}}" }}"
+            description: "{{ "{{" }} $labels.instance {{ "}}" }} Replica Lag {{ "{{" }} $value {{ "}}" }}.  node   ."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+    # =========================================================================
+    # GROUP 3-A. RDS CloudWatch - MariaDB (hp-rds-master, hp-rds-replica)
+    # =========================================================================
+    - name: data.rds_mariadb
+      rules:
+
+        - alert: RdsMariaDBCpuHighWarning
+          expr: |
+            aws_rds_cpuutilization_average{
+              dimension_DBInstanceIdentifier=~"{{ .Values.layer5_data.rds_instances.mariadb | join "|" }}"
+            } / 100
+            > {{ .Values.layer5_data.thresholds.rds_cpu_warning }}
+          for: {{ .Values.layer5_data.for.rds_cpu_warning }}
+          labels:
+            severity: warning
+            layer: data
+            component: rds-mariadb
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "RDS MariaDB CPU Warning: {{ "{{" }} $labels.dimension_DBInstanceIdentifier {{ "}}" }}"
+            description: "RDS {{ "{{" }} $labels.dimension_DBInstanceIdentifier {{ "}}" }} CPU {{ "{{" }} $value | humanizePercentage {{ "}}" }}."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: RdsMariaDBCpuHighCritical
+          expr: |
+            aws_rds_cpuutilization_average{
+              dimension_DBInstanceIdentifier=~"{{ .Values.layer5_data.rds_instances.mariadb | join "|" }}"
+            } / 100
+            > {{ .Values.layer5_data.thresholds.rds_cpu_critical }}
+          for: {{ .Values.layer5_data.for.rds_cpu_critical }}
+          labels:
+            severity: critical
+            layer: data
+            component: rds-mariadb
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "RDS MariaDB CPU Critical: {{ "{{" }} $labels.dimension_DBInstanceIdentifier {{ "}}" }}"
+            description: "RDS {{ "{{" }} $labels.dimension_DBInstanceIdentifier {{ "}}" }} CPU {{ "{{" }} $value | humanizePercentage {{ "}}" }}. Immediate action required."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: RdsMariaDBFreeStorageLowWarning
+          expr: |
+            aws_rds_free_storage_space_minimum{
+              dimension_DBInstanceIdentifier=~"{{ .Values.layer5_data.rds_instances.mariadb | join "|" }}"
+            } < {{ .Values.layer5_data.thresholds.rds_storage_warning }}
+          for: {{ .Values.layer5_data.for.rds_storage_warning }}
+          labels:
+            severity: warning
+            layer: data
+            component: rds-mariadb
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "RDS MariaDB Free Storage Warning: {{ "{{" }} $labels.dimension_DBInstanceIdentifier {{ "}}" }}"
+            description: "RDS {{ "{{" }} $labels.dimension_DBInstanceIdentifier {{ "}}" }}   {{ "{{" }} $value | humanize1024 {{ "}}" }}B."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: RdsMariaDBFreeStorageLowCritical
+          expr: |
+            aws_rds_free_storage_space_minimum{
+              dimension_DBInstanceIdentifier=~"{{ .Values.layer5_data.rds_instances.mariadb | join "|" }}"
+            } < {{ .Values.layer5_data.thresholds.rds_storage_critical }}
+          for: {{ .Values.layer5_data.for.rds_storage_critical }}
+          labels:
+            severity: critical
+            layer: data
+            component: rds-mariadb
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "RDS MariaDB Free Storage Critical: {{ "{{" }} $labels.dimension_DBInstanceIdentifier {{ "}}" }}"
+            description: "RDS {{ "{{" }} $labels.dimension_DBInstanceIdentifier {{ "}}" }}   {{ "{{" }} $value | humanize1024 {{ "}}" }}B.   ."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+    # =========================================================================
+    # GROUP 3-B. RDS CloudWatch - aiops PostgreSQL (aiops-postgres)
+    # =========================================================================
+    - name: data.rds_postgresql_aiops
+      rules:
+
+        - alert: RdsAiopsPostgreSQLCpuHighWarning
+          expr: |
+            aws_rds_cpuutilization_average{
+              dimension_DBInstanceIdentifier="{{ .Values.layer5_data.rds_instances.postgresql_aiops }}"
+            } / 100
+            > {{ .Values.layer5_data.thresholds.rds_cpu_warning }}
+          for: {{ .Values.layer5_data.for.rds_cpu_warning }}
+          labels:
+            severity: warning
+            layer: data
+            component: rds-postgresql-aiops
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "RDS aiops-postgres CPU Warning: {{ "{{" }} $labels.dimension_DBInstanceIdentifier {{ "}}" }}"
+            description: "RDS {{ "{{" }} $labels.dimension_DBInstanceIdentifier {{ "}}" }} CPU {{ "{{" }} $value | humanizePercentage {{ "}}" }}."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: RdsAiopsPostgreSQLCpuHighCritical
+          expr: |
+            aws_rds_cpuutilization_average{
+              dimension_DBInstanceIdentifier="{{ .Values.layer5_data.rds_instances.postgresql_aiops }}"
+            } / 100
+            > {{ .Values.layer5_data.thresholds.rds_cpu_critical }}
+          for: {{ .Values.layer5_data.for.rds_cpu_critical }}
+          labels:
+            severity: critical
+            layer: data
+            component: rds-postgresql-aiops
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "RDS aiops-postgres CPU Critical: {{ "{{" }} $labels.dimension_DBInstanceIdentifier {{ "}}" }}"
+            description: "RDS {{ "{{" }} $labels.dimension_DBInstanceIdentifier {{ "}}" }} CPU {{ "{{" }} $value | humanizePercentage {{ "}}" }}. Immediate action required."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: RdsAiopsPostgreSQLFreeStorageLowWarning
+          expr: |
+            aws_rds_free_storage_space_minimum{
+              dimension_DBInstanceIdentifier="{{ .Values.layer5_data.rds_instances.postgresql_aiops }}"
+            } < {{ .Values.layer5_data.thresholds.rds_storage_warning }}
+          for: {{ .Values.layer5_data.for.rds_storage_warning }}
+          labels:
+            severity: warning
+            layer: data
+            component: rds-postgresql-aiops
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "RDS aiops-postgres Free Storage Warning: {{ "{{" }} $labels.dimension_DBInstanceIdentifier {{ "}}" }}"
+            description: "RDS {{ "{{" }} $labels.dimension_DBInstanceIdentifier {{ "}}" }}   {{ "{{" }} $value | humanize1024 {{ "}}" }}B."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: RdsAiopsPostgreSQLFreeStorageLowCritical
+          expr: |
+            aws_rds_free_storage_space_minimum{
+              dimension_DBInstanceIdentifier="{{ .Values.layer5_data.rds_instances.postgresql_aiops }}"
+            } < {{ .Values.layer5_data.thresholds.rds_storage_critical }}
+          for: {{ .Values.layer5_data.for.rds_storage_critical }}
+          labels:
+            severity: critical
+            layer: data
+            component: rds-postgresql-aiops
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "RDS aiops-postgres Free Storage Critical: {{ "{{" }} $labels.dimension_DBInstanceIdentifier {{ "}}" }}"
+            description: "RDS {{ "{{" }} $labels.dimension_DBInstanceIdentifier {{ "}}" }}   {{ "{{" }} $value | humanize1024 {{ "}}" }}B.   ."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+    # =========================================================================
+    # GROUP 3-C. RDS CloudWatch - Keycloak PostgreSQL (keycloak-db-prod)
+    # =========================================================================
+    - name: data.rds_postgresql_keycloak
+      rules:
+
+        - alert: RdsKeycloakPostgreSQLCpuHighWarning
+          expr: |
+            aws_rds_cpuutilization_average{
+              dimension_DBInstanceIdentifier="{{ .Values.layer5_data.rds_instances.postgresql_keycloak }}"
+            } / 100
+            > {{ .Values.layer5_data.thresholds.rds_cpu_warning }}
+          for: {{ .Values.layer5_data.for.rds_cpu_warning }}
+          labels:
+            severity: warning
+            layer: data
+            component: rds-postgresql-keycloak
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "RDS keycloak-db-prod CPU Warning: {{ "{{" }} $labels.dimension_DBInstanceIdentifier {{ "}}" }}"
+            description: "RDS {{ "{{" }} $labels.dimension_DBInstanceIdentifier {{ "}}" }} CPU {{ "{{" }} $value | humanizePercentage {{ "}}" }}."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: RdsKeycloakPostgreSQLCpuHighCritical
+          expr: |
+            aws_rds_cpuutilization_average{
+              dimension_DBInstanceIdentifier="{{ .Values.layer5_data.rds_instances.postgresql_keycloak }}"
+            } / 100
+            > {{ .Values.layer5_data.thresholds.rds_cpu_critical }}
+          for: {{ .Values.layer5_data.for.rds_cpu_critical }}
+          labels:
+            severity: critical
+            layer: data
+            component: rds-postgresql-keycloak
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "RDS keycloak-db-prod CPU Critical: {{ "{{" }} $labels.dimension_DBInstanceIdentifier {{ "}}" }}"
+            description: "RDS {{ "{{" }} $labels.dimension_DBInstanceIdentifier {{ "}}" }} CPU {{ "{{" }} $value | humanizePercentage {{ "}}" }}. Immediate action required."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: RdsKeycloakPostgreSQLFreeStorageLowWarning
+          expr: |
+            aws_rds_free_storage_space_minimum{
+              dimension_DBInstanceIdentifier="{{ .Values.layer5_data.rds_instances.postgresql_keycloak }}"
+            } < {{ .Values.layer5_data.thresholds.rds_storage_warning }}
+          for: {{ .Values.layer5_data.for.rds_storage_warning }}
+          labels:
+            severity: warning
+            layer: data
+            component: rds-postgresql-keycloak
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "RDS keycloak-db-prod Free Storage Warning: {{ "{{" }} $labels.dimension_DBInstanceIdentifier {{ "}}" }}"
+            description: "RDS {{ "{{" }} $labels.dimension_DBInstanceIdentifier {{ "}}" }}   {{ "{{" }} $value | humanize1024 {{ "}}" }}B."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: RdsKeycloakPostgreSQLFreeStorageLowCritical
+          expr: |
+            aws_rds_free_storage_space_minimum{
+              dimension_DBInstanceIdentifier="{{ .Values.layer5_data.rds_instances.postgresql_keycloak }}"
+            } < {{ .Values.layer5_data.thresholds.rds_storage_critical }}
+          for: {{ .Values.layer5_data.for.rds_storage_critical }}
+          labels:
+            severity: critical
+            layer: data
+            component: rds-postgresql-keycloak
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "RDS keycloak-db-prod Free Storage Critical: {{ "{{" }} $labels.dimension_DBInstanceIdentifier {{ "}}" }}"
+            description: "RDS {{ "{{" }} $labels.dimension_DBInstanceIdentifier {{ "}}" }}   {{ "{{" }} $value | humanize1024 {{ "}}" }}B.   ."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+    # =========================================================================
+    # GROUP 4. redis-exporter status
+    # =========================================================================
+    - name: data.redis_exporter
+      rules:
+
+        - alert: RedisExporterDown
+          expr: up{job="redis-exporter"} == 0
+          for: {{ .Values.layer5_data.for.redis_exporter_down }}
+          labels:
+            severity: critical
+            layer: data
+            component: redis-exporter
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Redis Exporter Down"
+            description: "redis-exporter is not responding. ElastiCache Redis  metrics  in progress."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+    # =========================================================================
+    # GROUP 5. ElastiCache Redis (redis-exporter + YACE)
+    # =========================================================================
+    - name: data.redis
+      rules:
+
+        - alert: RedisMemoryHighWarning
+          expr: |
+            (
+              redis_memory_used_bytes
+              / redis_memory_max_bytes
+            ) > {{ .Values.layer5_data.thresholds.redis_memory_warning }}
+          for: {{ .Values.layer5_data.for.redis_memory_warning }}
+          labels:
+            severity: warning
+            layer: data
+            component: elasticache-redis
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Redis Memory Warning: {{ "{{" }} $labels.instance {{ "}}" }}"
+            description: "Redis {{ "{{" }} $labels.instance {{ "}}" }}  usage {{ "{{" }} $value | humanizePercentage {{ "}}" }}."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: RedisMemoryHighCritical
+          expr: |
+            (
+              redis_memory_used_bytes
+              / redis_memory_max_bytes
+            ) > {{ .Values.layer5_data.thresholds.redis_memory_critical }}
+          for: {{ .Values.layer5_data.for.redis_memory_critical }}
+          labels:
+            severity: critical
+            layer: data
+            component: elasticache-redis
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Redis Memory Critical: {{ "{{" }} $labels.instance {{ "}}" }}"
+            description: "Redis {{ "{{" }} $labels.instance {{ "}}" }}  usage {{ "{{" }} $value | humanizePercentage {{ "}}" }}. OOM eviction ."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: RedisLowHitRatio
+          expr: |
+            (
+              rate(redis_keyspace_hits_total[5m])
+              /
+              clamp_min(
+                rate(redis_keyspace_hits_total[5m]) + rate(redis_keyspace_misses_total[5m]),
+                0.001
+              )
+            ) < {{ .Values.layer5_data.thresholds.redis_hit_ratio_warning }}
+          for: {{ .Values.layer5_data.for.redis_hit_ratio_warning }}
+          labels:
+            severity: warning
+            layer: data
+            component: elasticache-redis
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Redis Hit Ratio Low: {{ "{{" }} $labels.instance {{ "}}" }}"
+            description: "Redis {{ "{{" }} $labels.instance {{ "}}" }}   {{ "{{" }} $value | humanizePercentage {{ "}}" }}. threshold: {{ .Values.layer5_data.thresholds.redis_hit_ratio_warning | mulf 100 }}%"
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+    # =========================================================================
+    # GROUP 6. MongoDB - exporter deployed, enabled: true
+    # =========================================================================
+    {{- if .Values.layer5_data.mongodb.enabled }}
+    - name: data.mongodb
+      rules:
+
+        - alert: MongoDBDown
+          expr: mongodb_up == 0
+          for: 1m
+          labels:
+            severity: critical
+            layer: data
+            component: mongodb
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "MongoDB Down: {{ "{{" }} $labels.instance {{ "}}" }}"
+            description: "MongoDB is not responding."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+    {{- end }}
+
+    # =========================================================================
+    # GROUP 7. Kafka/Strimzi - exporter deployed, enabled: true
+    # =========================================================================
+    {{- if .Values.layer5_data.kafka.enabled }}
+    - name: data.kafka
+      rules:
+
+        - alert: KafkaBrokerTargetDown
+          expr: |
+            absent(up{job="observability/kafka-broker"})
+            or
+            min by (job) (up{job="observability/kafka-broker"}) == 0
+          for: 2m
+          labels:
+            severity: critical
+            layer: data
+            component: kafka-broker
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Kafka broker target down"
+            description: "Kafka broker target is missing or scrape is failing."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: KafkaControllerTargetDown
+          expr: |
+            absent(up{job="observability/kafka-controller"})
+            or
+            min by (job) (up{job="observability/kafka-controller"}) == 0
+          for: 2m
+          labels:
+            severity: critical
+            layer: data
+            component: kafka-controller
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Kafka controller target down"
+            description: "Kafka controller target is missing or scrape is failing."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: KafkaNetworkProcessorIdleLowWarning
+          expr: |
+            min by (instance) (
+              kafka_network_socketserver_networkprocessoravgidlepercent
+            ) < 0.30
+          for: 10m
+          labels:
+            severity: warning
+            layer: data
+            component: kafka
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Kafka network processor idle low"
+            description: "Kafka {{ "{{" }} $labels.instance {{ "}}" }} network processor idle is below 30%."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: KafkaNetworkProcessorIdleLowCritical
+          expr: |
+            min by (instance) (
+              kafka_network_socketserver_networkprocessoravgidlepercent
+            ) < 0.10
+          for: 5m
+          labels:
+            severity: critical
+            layer: data
+            component: kafka
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Kafka network processor idle critical"
+            description: "Kafka {{ "{{" }} $labels.instance {{ "}}" }} network processor idle is below 10%."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: KafkaDelayedOperationsHigh
+          expr: |
+            sum by (instance) (
+              kafka_server_delayedoperationpurgatory_numdelayedoperations_delayedoperation_fetch
+              +
+              kafka_server_delayedoperationpurgatory_numdelayedoperations_delayedoperation_produce
+            ) > 100
+          for: 10m
+          labels:
+            severity: warning
+            layer: data
+            component: kafka
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Kafka delayed operations high"
+            description: "Kafka {{ "{{" }} $labels.instance {{ "}}" }} delayed operations are above 100."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+    {{- end }}
+
+    # =========================================================================
+    # GROUP 8. PostgreSQL
+    # =========================================================================
+    {{- if .Values.layer5_data.postgresql.enabled }}
+    - name: data.postgresql
+      rules:
+
+        - alert: PostgreSQLDown
+          expr: |
+            pg_up == 0
+          for: 2m
+          labels:
+            severity: critical
+            layer: data
+            component: rds-postgresql
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "PostgreSQL down: {{ "{{" }} $labels.instance {{ "}}" }}"
+            description: "PostgreSQL exporter cannot connect to the database."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: PostgreSQLExporterScrapeError
+          expr: |
+            pg_exporter_last_scrape_error > 0
+          for: 5m
+          labels:
+            severity: warning
+            layer: data
+            component: rds-postgresql
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "PostgreSQL exporter scrape error: {{ "{{" }} $labels.instance {{ "}}" }}"
+            description: "postgres_exporter scrape is failing."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: PostgreSQLConnectionsHigh
+          expr: |
+            (
+              sum by (instance) (pg_stat_activity_count)
+              /
+              max by (instance) (pg_settings_max_connections)
+            ) > 0.80
+          for: 10m
+          labels:
+            severity: warning
+            layer: data
+            component: rds-postgresql
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "PostgreSQL connections high: {{ "{{" }} $labels.instance {{ "}}" }}"
+            description: "PostgreSQL connection usage is above 80%."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: PostgreSQLConnectionsCritical
+          expr: |
+            (
+              sum by (instance) (pg_stat_activity_count)
+              /
+              max by (instance) (pg_settings_max_connections)
+            ) > 0.90
+          for: 5m
+          labels:
+            severity: critical
+            layer: data
+            component: rds-postgresql
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "PostgreSQL connections critical: {{ "{{" }} $labels.instance {{ "}}" }}"
+            description: "PostgreSQL connection usage is above 90%."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: PostgreSQLLongTransaction
+          expr: |
+            max by (instance) (pg_stat_activity_max_tx_duration) > 300
+          for: 10m
+          labels:
+            severity: warning
+            layer: data
+            component: rds-postgresql
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "PostgreSQL long transaction: {{ "{{" }} $labels.instance {{ "}}" }}"
+            description: "PostgreSQL has a transaction running longer than 300 seconds."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+    {{- end }}
+
+{{- end }}

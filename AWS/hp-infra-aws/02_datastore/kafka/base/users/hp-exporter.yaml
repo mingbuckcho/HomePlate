@@ -1,0 +1,24 @@
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaUser
+metadata:
+  name: hp-exporter
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: ticketing
+spec:
+  authentication:
+    type: tls
+  authorization:
+    type: simple
+    acls:
+      # Exporter ← hp.crawl.result consume
+      - resource:
+          type: topic
+          name: hp.crawl.result
+        operations: [Read, Describe]
+      # Consumer Group 오프셋 관리 권한
+      # group.id = "hp-exporter-group" (exporter.py CONSUMER_GROUP_ID)
+      - resource:
+          type: group
+          name: hp-exporter-group
+        operations: [Read, Describe]

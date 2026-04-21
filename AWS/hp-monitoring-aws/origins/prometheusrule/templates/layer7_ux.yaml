@@ -1,0 +1,93 @@
+{{- if .Values.layer7_ux.enabled }}
+# =============================================================================
+# Layer 7 - UX
+# Targets: Faro RUM (hp-frontend Web Vitals / user experience)
+# Metrics: faro_receiver_* (Alloy Collector faro.receiver)
+# =============================================================================
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: layer-ux-rules
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    release: {{ .Values.global.releaseLabel }}
+    layer: ux
+spec:
+  groups:
+
+    # =========================================================================
+    # GROUP 1. Faro Receiver status
+    # =========================================================================
+    - name: ux.faro
+      rules:
+
+        - alert: FaroReceiverStalled
+          expr: |
+            (
+              sum(increase(faro_receiver_events_total[30m])) > 30
+            )
+            and
+            (
+              sum(increase(faro_receiver_events_total[5m])) == 0
+            )
+          for: {{ .Values.layer7_ux.for.faro_receiver_down }}
+          labels:
+            severity: warning
+            layer: ux
+            component: faro-rum
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Faro Receiver Stalled"
+            description: "Faro RUM events were flowing in the last 30 minutes, but no events have been received in the last 5 minutes. Check Alloy Collector, ingress path, and frontend RUM SDK delivery."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: FaroExceptionRateHighWarning
+          expr: |
+            (
+              sum(rate(faro_receiver_exceptions_total[5m]))
+              /
+              clamp_min(sum(rate(faro_receiver_events_total[5m])), 0.001)
+            ) > {{ .Values.layer7_ux.thresholds.faro_error_rate_warning }}
+            and
+            sum(rate(faro_receiver_events_total[5m])) > 0.05
+          for: {{ .Values.layer7_ux.for.faro_error_warning }}
+          labels:
+            severity: warning
+            layer: ux
+            component: faro-rum
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Faro Exception Rate Warning: {{ "{{" }} $value | humanizePercentage {{ "}}" }}"
+            description: "Frontend JavaScript exception rate is elevated while RUM traffic is present. User-side errors may be increasing."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+        - alert: FaroExceptionRateHighCritical
+          expr: |
+            (
+              sum(rate(faro_receiver_exceptions_total[5m]))
+              /
+              clamp_min(sum(rate(faro_receiver_events_total[5m])), 0.001)
+            ) > {{ .Values.layer7_ux.thresholds.faro_error_rate_critical }}
+            and
+            sum(rate(faro_receiver_events_total[5m])) > 0.05
+          for: {{ .Values.layer7_ux.for.faro_error_critical }}
+          labels:
+            severity: critical
+            layer: ux
+            component: faro-rum
+            cluster: {{ .Values.global.cluster }}
+            environment: {{ .Values.global.environment }}
+            team: {{ .Values.global.team }}
+          annotations:
+            summary: "Faro Exception Rate Critical: {{ "{{" }} $value | humanizePercentage {{ "}}" }}"
+            description: "Frontend JavaScript exception rate is critically high while RUM traffic is present. Immediate investigation is required."
+            runbook_url: {{ .Values.global.runbook_url }}
+            dashboard_url: {{ .Values.global.dashboard_url }}
+
+{{- end }}

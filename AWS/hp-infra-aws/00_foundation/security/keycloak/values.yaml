@@ -1,0 +1,52 @@
+image:
+  registry: docker.io
+  repository: bitnamilegacy/keycloak
+  tag: 26.3.3-debian-12-r0
+  pullPolicy: IfNotPresent
+
+auth:
+  adminUser: admin
+  existingSecret: keycloak-secrets
+  existingSecretKey: admin-password
+
+postgresql:
+  enabled: false
+
+externalDatabase:
+  host: keycloak-db-prod.chemcscc2ik6.ap-northeast-2.rds.amazonaws.com
+  port: 5432
+  database: keycloak
+  user: keycloak_admin
+  existingSecret: keycloak-secrets
+  existingSecretKey: db-password
+
+production: true
+proxyHeaders: xforwarded
+httpEnabled: true
+
+tls:
+  enabled: false
+
+replicaCount: 1
+
+resources:
+  requests:
+    memory: "512Mi"
+    cpu: "250m"
+  limits:
+    memory: "1Gi"
+    cpu: "500m"
+
+service:
+  type: ClusterIP
+
+ingress:
+  enabled: false
+
+hostname: auth.homeplate.site
+hostnameStrict: false
+extraEnvVars:
+  - name: KC_HOSTNAME_URL
+    value: "https://auth.homeplate.site"
+  - name: KC_HOSTNAME_ADMIN_URL
+    value: "https://auth.homeplate.site"

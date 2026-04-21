@@ -1,0 +1,43 @@
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: aiops-vs
+  namespace: aiops
+spec:
+  hosts:
+    - aiops.homeplate.site
+  gateways:
+    - istio-system/homeplate-gateway
+  http:
+    - match:
+        - uri:
+            prefix: /api/auth/
+        - uri:
+            exact: /api/auth
+      route:
+        - destination:
+            host: aiops-frontend.aiops.svc.cluster.local
+            port:
+              number: 3000
+
+    - match:
+        - uri:
+            prefix: /api/
+        - uri:
+            exact: /api
+      rewrite:
+        uri: /
+      route:
+        - destination:
+            host: aiops-backend.aiops.svc.cluster.local
+            port:
+              number: 8000
+
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: aiops-frontend.aiops.svc.cluster.local
+            port:
+              number: 3000

@@ -1,0 +1,228 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: hp-backend-booking
+  namespace: hp-core
+  labels:
+    app: hp-backend-booking
+spec:
+  selector:
+    matchLabels:
+      app: hp-backend-booking
+  strategy:
+    canary:
+      canaryService: hp-backend-booking-canary
+      stableService: hp-backend-booking-stable
+      trafficRouting:
+        istio:
+          virtualService:
+            name: hp-integrated-vs
+            routes:
+            - booking-api # VirtualService 내 name과 정확히 일치해야 함
+      steps:
+      - setWeight: 100
+#      - analysis:hp-booking-vs
+#          templates:
+#          - templateName: hp-canary-analysis
+#          args:
+#          - name: service-name
+#            value: hp-backend-booking
+#      - setWeight: 50
+#      - pause: {duration: 5m}
+#      - setWeight: 100
+  template:
+    metadata:
+      labels:
+        app: hp-backend-booking
+      annotations:
+        sidecar.istio.io/rewriteAppHTTPProbers: "true"
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/actuator/prometheus"
+        prometheus.io/port: "8080"
+    spec:
+      nodeSelector:
+        nodepool: app
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution: # "가급적 찢어줘" (Soft 모드)
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - hp-backend-booking # 자기 자신과 같은 라벨을 가진 파드를 피함
+              topologyKey: "kubernetes.io/hostname" # 기준은 '노드 이름'
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+
+      # ✅ [추가] Kafka SSL 인증서 처리를 위한 볼륨 정의
+      volumes:
+        - name: kafka-user
+          secret:
+            secretName: ticketing-notification-client
+        - name: kafka-cluster-ca
+          secret:
+            secretName: ticketing-cluster-ca-cert
+        - name: kafka-certs-converted
+          emptyDir: {}
+
+      # ✅ [추가] 초기 컨테이너: ca.crt를 Java가 인식하는 truststore.p12로 변환
+      initContainers:
+      - name: kafka-cert-init
+        image: 681224237958.dkr.ecr.ap-northeast-2.amazonaws.com/hp-backend:v0.1.80
+        imagePullPolicy: Always
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+        command:
+        - sh
+        - -c
+        - |
+          keytool -import -trustcacerts \
+            -alias kafka-ca \
+            -file /opt/kafka/cluster-ca/ca.crt \
+            -keystore /opt/kafka/certs-converted/truststore.p12 \
+            -storetype PKCS12 \
+            -storepass changeit \
+            -noprompt
+          echo "✅ truststore.p12 생성 완료"
+        volumeMounts:
+        - name: kafka-certs-converted
+          mountPath: /opt/kafka/certs-converted
+        - name: kafka-cluster-ca
+          mountPath: /opt/kafka/cluster-ca
+          readOnly: true
+
+      containers:
+      - name: hp-backend-booking
+        image: 681224237958.dkr.ecr.ap-northeast-2.amazonaws.com/hp-backend:v0.1.80
+        imagePullPolicy: Always
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        
+        # ✅ [추가] 인증서 파일 접근을 위한 마운트 설정
+        volumeMounts:
+          - name: kafka-user
+            mountPath: /opt/kafka/certs
+            readOnly: true
+          - name: kafka-certs-converted
+            mountPath: /opt/kafka/certs-converted
+            readOnly: true
+
+        ports:
+        - containerPort: 8080
+        envFrom:
+        - secretRef:
+            name: hp-backend-secret
+        env:
+        - name: SPRING_PROFILES_ACTIVE
+          value: "prod,booking"
+        - name: APP_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: hp-backend-secret
+              key: ADMIN_PASSWORD
+        
+        # [모니터링 & 트레이싱 설정]
+        - name: OTEL_SERVICE_NAME
+          value: "hp-backend-booking"
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "http://alloy-collector.observability.svc.cluster.local:4318"
+        - name: OTEL_METRICS_EXPORTER
+          value: "none"
+        - name: OTEL_INSTRUMENTATION_LOGBACK_MDC_ENABLED
+          value: "true"
+        - name: OTEL_INSTRUMENTATION_COMMON_LOGGING_TRACE_ID
+          value: "true"
+        - name: OTEL_INSTRUMENTATION_COMMON_LOGGING_SPAN_ID
+          value: "true"
+        - name: OTEL_INSTRUMENTATION_COMMON_LOGGING_TRACE_FLAGS
+          value: "true"
+        - name: OTEL_LOGS_EXPORTER
+          value: "none"
+
+        # ✅ [추가] Kafka SSL 환경변수 (앱이 마운트된 인증서를 찾을 수 있게 설정)
+        - name: SPRING_KAFKA_PROPERTIES_SECURITY_PROTOCOL
+          value: "SSL"
+        - name: SPRING_KAFKA_PROPERTIES_SSL_TRUSTSTORE_LOCATION
+          value: "/opt/kafka/certs-converted/truststore.p12"
+        - name: SPRING_KAFKA_PROPERTIES_SSL_TRUSTSTORE_TYPE
+          value: "PKCS12"
+        - name: SPRING_KAFKA_PROPERTIES_SSL_TRUSTSTORE_PASSWORD
+          value: "changeit"
+        - name: SPRING_KAFKA_PROPERTIES_SSL_KEYSTORE_LOCATION
+          value: "/opt/kafka/certs/user.p12"
+        - name: SPRING_KAFKA_PROPERTIES_SSL_KEYSTORE_TYPE
+          value: "PKCS12"
+        - name: SPRING_KAFKA_PROPERTIES_SSL_KEYSTORE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: ticketing-notification-client
+              key: user.password
+        - name: SPRING_KAFKA_PROPERTIES_SSL_KEY_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: ticketing-notification-client
+              key: user.password
+
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "256Mi"
+          limits:
+            cpu: "500m"
+            memory: "1Gi"
+        livenessProbe:
+          httpGet:
+            path: /actuator/health/liveness
+            port: 8080
+          initialDelaySeconds: 150
+          periodSeconds: 10
+          timeoutSeconds: 5        # 👈 [꼭 추가]
+          failureThreshold: 5
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: 8080
+          initialDelaySeconds: 150
+          periodSeconds: 10
+          timeoutSeconds: 5        # 👈 [꼭 추가]
+          failureThreshold: 5
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hp-backend-booking-stable
+  namespace: hp-core
+spec:
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+  selector:
+    app: hp-backend-booking
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hp-backend-booking-canary
+  namespace: hp-core
+spec:
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+  selector:
+    app: hp-backend-booking

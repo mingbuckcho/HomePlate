@@ -1,0 +1,41 @@
+apiVersion: kafka.strimzi.io/v1
+kind: Kafka
+metadata:
+  name: ticketing
+  namespace: kafka
+  annotations:
+    strimzi.io/node-pools: enabled
+    strimzi.io/kraft: enabled
+spec:
+  kafka:
+    version: 4.1.1
+    metadataVersion: 4.1-IV0
+    listeners:
+      - name: tls
+        port: 9093
+        type: internal
+        tls: true
+        authentication:
+          type: tls
+
+    authorization:
+      type: simple
+
+    config:
+      # prod는 브로커 3개 → replication factor 3
+      offsets.topic.replication.factor: 3
+      transaction.state.log.replication.factor: 3
+      transaction.state.log.min.isr: 2
+      default.replication.factor: 3
+      # 3개 중 2개 이상에 저장되어야 커밋 인정
+      # acks=all과 함께 써야 데이터 유실 방지 효과 있음
+      min.insync.replicas: 2
+    metricsConfig:
+      type: jmxPrometheusExporter
+      valueFrom:
+        configMapKeyRef:
+          name: kafka-metrics-config
+          key: kafka-metrics-config.yml
+  entityOperator:
+    topicOperator: {}
+    userOperator: {}

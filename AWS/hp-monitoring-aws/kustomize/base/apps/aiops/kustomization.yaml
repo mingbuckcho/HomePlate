@@ -1,0 +1,10 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - 02-aiops-backend-config.yaml
+  - 03-aiops-backend-deploy-svc.yaml
+  - 04-aiops-frontend-deploy-svc.yaml
+  - 05-secretstore-aiops.yaml
+  - 06-externalsecret-aiops-db.yaml
+  - 07-aiops-virtualservice.yaml

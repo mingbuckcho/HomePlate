@@ -1,0 +1,37 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: hp-strimzi-kafka-ops
+rules:
+  - apiGroups: ["kafka.strimzi.io"]
+    resources:
+      - kafkas
+      - kafkanodepools
+      - kafkatopics
+      - kafkausers
+      - kafkaconnects
+      - kafkaconnectors
+      - kafkamirrormakers
+      - kafkamirrormaker2s
+      - kafkabridges
+      - kafkarebalances
+      - kafkas/status
+      - kafkatopics/status
+      - kafkausers/status
+      - kafkaconnects/status
+      - kafkaconnectors/status
+      - kafkabridges/status
+      - kafkanodepools/status
+      - kafkamirrormakers/status
+      - kafkamirrormaker2s/status
+      - kafkarebalances/status
+    verbs: ["get","list","watch","create","update","patch","delete"]
+  - apiGroups: [""]
+    resources: ["pods","pods/log","services","configmaps","secrets","events","persistentvolumeclaims"]
+    verbs: ["get","list","watch","create","update","patch","delete"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get","list","watch","create","update","patch","delete"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get","list","watch","create","update","patch","delete"]

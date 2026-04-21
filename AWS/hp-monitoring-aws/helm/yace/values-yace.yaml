@@ -1,0 +1,141 @@
+serviceAccount:
+  create: true
+  name: yace
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::681224237958:role/hp-eks-cloudwatch-role
+
+tolerations:
+  - key: dedicated
+    operator: Equal
+    value: obs
+    effect: NoSchedule
+
+nodeSelector:
+  nodepool: obs
+
+extraArgs:
+  scraping-interval: "60"
+
+serviceMonitor:
+  enabled: true
+  interval: 60s
+  labels:
+    release: kps
+
+configMap:
+  enabled: true
+
+config: |-
+  apiVersion: v1alpha1
+  sts-region: ap-northeast-2
+  discovery:
+    jobs:
+      - type: AWS/RDS
+        regions: [ap-northeast-2]
+        searchTags:
+          - key: env
+            value: prod
+        metrics:
+          - name: CPUUtilization
+            statistics: [Average, Maximum]
+            period: 60
+            length: 600
+          - name: FreeStorageSpace
+            statistics: [Minimum]
+            period: 60
+            length: 600
+          - name: DatabaseConnections
+            statistics: [Maximum]
+            period: 60
+            length: 600
+
+      - type: AWS/ApplicationELB
+        regions: [ap-northeast-2]
+        searchTags:
+          - key: env
+            value: prod
+        dimensionNameRequirements:
+          - LoadBalancer
+        metrics:
+          - name: RequestCount
+            statistics: [Sum]
+            period: 60
+            length: 600
+          - name: TargetResponseTime
+            statistics: [Average, p95]
+            period: 60
+            length: 600
+          - name: HTTPCode_ELB_5XX_Count
+            statistics: [Sum]
+            period: 60
+            length: 600
+
+      - type: AWS/ApplicationELB
+        regions: [ap-northeast-2]
+        searchTags:
+          - key: env
+            value: prod
+        dimensionNameRequirements:
+          - LoadBalancer
+          - TargetGroup
+        metrics:
+          - name: HTTPCode_Target_5XX_Count
+            statistics: [Sum]
+            period: 60
+            length: 600
+          - name: HealthyHostCount
+            statistics: [Minimum]
+            period: 60
+            length: 600
+          - name: UnHealthyHostCount
+            statistics: [Minimum]
+            period: 60
+            length: 600
+
+      - type: AWS/ElastiCache
+        regions: [ap-northeast-2]
+        searchTags:
+          - key: env
+            value: prod
+        metrics:
+          - name: CPUUtilization
+            statistics: [Average, Maximum]
+            period: 60
+            length: 600
+          - name: FreeableMemory
+            statistics: [Minimum]
+            period: 60
+            length: 600
+          - name: CurrConnections
+            statistics: [Maximum]
+            period: 60
+            length: 600
+
+      - type: AWS/S3
+        regions: [ap-northeast-2]
+        searchTags:
+          - key: env
+            value: prod
+        metrics:
+          - name: NumberOfObjects
+            statistics: [Average]
+            period: 86400
+            length: 172800
+          - name: BucketSizeBytes
+            statistics: [Average]
+            period: 86400
+            length: 172800
+      - type: AWS/WAFV2
+        regions: [ap-northeast-2]
+        searchTags:
+          - key: env
+            value: prod
+        metrics:
+          - name: AllowedRequests
+            statistics: [Sum]
+            period: 60
+            length: 600
+          - name: BlockedRequests
+            statistics: [Sum]
+            period: 60
+            length: 600

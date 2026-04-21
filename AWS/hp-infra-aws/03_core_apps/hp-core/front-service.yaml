@@ -1,0 +1,36 @@
+# hp-frontend-services.yaml
+# 1. Stable 서비스 (구버전용)
+apiVersion: v1
+kind: Service
+metadata:
+  name: hp-frontend-stable  # 이름을 변경합니다.
+  namespace: hp-core
+  labels:
+    app: hp-frontend
+spec:
+  type: ClusterIP
+  selector:
+    app: hp-frontend
+  ports:
+  - name: http
+    port: 80
+    targetPort: 3000
+
+---
+
+# 2. Canary 서비스 (신버전용)
+apiVersion: v1
+kind: Service
+metadata:
+  name: hp-frontend-canary  # 새로운 이름을 부여합니다.
+  namespace: hp-core
+  labels:
+    app: hp-frontend
+spec:
+  type: ClusterIP
+  selector:
+    app: hp-frontend
+  ports:
+  - name: http
+    port: 80
+    targetPort: 3000

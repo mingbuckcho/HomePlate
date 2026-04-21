@@ -1,0 +1,81 @@
+# 1. API 버전과 종류 변경 [변경]
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: hp-frontend
+  namespace: hp-core
+  labels:
+    app: hp-frontend
+spec:
+  replicas: 2
+  # [기존 설정 유지]
+  selector:
+    matchLabels:
+      app: hp-frontend
+  template:
+    metadata:
+      labels:
+        app: hp-frontend
+    spec:
+      nodeSelector:
+        nodepool: app 
+      serviceAccountName: hp-frontend-sa
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+      containers:
+      - name: hp-frontend
+        image: 681224237958.dkr.ecr.ap-northeast-2.amazonaws.com/hp-frontend:v0.1.28
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 3000
+        env:
+        - name: RUM_ENABLED
+          value: "true"
+        # ... (나머지 환경 변수 동일)
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 1Gi
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 20
+  # 🔥 [추가] 카나리 배포 전략 설정
+  strategy:
+    canary:
+      canaryService: hp-frontend-canary
+      stableService: hp-frontend-stable
+      trafficRouting:
+        istio:
+          virtualService:
+            name: hp-frontend-vs
+            routes:
+            - primary
+      steps:
+      - setWeight: 100   # 1. 트래픽 10%를 먼저 보냅니다.
+    
+    # 🔥 [여기서 사용!] 10% 보낸 상태에서 모니터링 담당자의 템플릿으로 검사 시작
+#      - analysis:
+#          templates:
+#          - templateName: hp-canary-analysis # 보내주신 템플릿 이름
+#          args:
+#          - name: service-name
+#            value: hp-frontend # 템플릿의 {{ args.service-name }}에 주입될 값
+            
+#      - setWeight: 50   # 2. 10% 검사 통과하면 50%로 확대
+#      - pause: {duration: 5m} # 3. 5분간 더 지켜보고
+#      - setWeight: 100  # 4. 최종 완료!

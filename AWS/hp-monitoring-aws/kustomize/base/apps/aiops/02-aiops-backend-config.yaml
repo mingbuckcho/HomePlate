@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aiops-backend-config
+  namespace: aiops
+data:
+  APP_ENV: "eks"
+  APP_PORT: "8000"
+  LOG_LEVEL: "INFO"
+
+  DB_HOST: "aiops-postgres.chemcscc2ik6.ap-northeast-2.rds.amazonaws.com"
+  DB_PORT: "5432"
+  DB_NAME: "aiops"
+  DB_USER: "aiops_app"
+
+  AWS_REGION: "ap-northeast-2"
+  BEDROCK_MODEL_ID: "global.anthropic.claude-sonnet-4-6"
+
+  PROM_URL: "http://kps-prometheus.observability:9090"
+  LOKI_URL: "http://loki-gateway.observability:80"
+  LOKI_TENANT_ID: "homeplate"
+  TEMPO_URL: "http://tempo-query-frontend.observability:3200"
+
+  ENABLE_RAG_EMBEDDING: "true"
+  EMBED_MODEL_ID: "amazon.titan-embed-text-v2:0"

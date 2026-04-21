@@ -1,0 +1,15 @@
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: hp-crawl-exported
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: ticketing
+spec:
+  topicName: hp.crawl.exported
+  partitions: 3
+  replicas: 3
+  config:
+    retention.ms: "604800000"
+    compression.type: lz4
+    min.insync.replicas: "2"

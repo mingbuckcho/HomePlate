@@ -1,0 +1,88 @@
+# 1시간마다 CRAWL_NAVER_NEWS 잡을 등록한다
+# seed.py를 실행하지 않고 필요한 잡만 직접 등록한다
+# 이렇게 하면 seed.py 변경이 이 CronJob에 영향을 주지 않는다
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: hp-naver-news
+  namespace: hp-workers
+  labels:
+    app: hp-naver-news
+spec:
+  # 매 시간 정각에 실행한다
+  # 형식: 분 시 일 월 요일
+  schedule: "0 * * * *"
+  # 이전 실행이 아직 끝나지 않았으면 새로 실행하지 않는다
+  # 네트워크 장애 등으로 이전 실행이 길어질 때 중복 실행을 방지한다
+  concurrencyPolicy: Forbid
+  # 성공/실패 기록을 각 3개까지 보관한다 (kubectl get jobs로 확인 가능)
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      # 실패 시 최대 2번 재시도한다 (총 3번 시도)
+      backoffLimit: 2
+      template:
+        spec:
+          nodeSelector:
+            nodepool: app
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+          containers:
+            - name: hp-naver-news
+              image: "681224237958.dkr.ecr.ap-northeast-2.amazonaws.com/hp-ingestion:v0.1.3"
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                seccompProfile:
+                  type: RuntimeDefault
+              # 인라인 Python 스크립트로 잡을 등록한다
+              # PENDING이나 RUNNING 상태의 같은 잡이 있으면 등록하지 않는다
+              command:
+                - python
+                - -c
+                - |
+                  from app.mongo_client import get_db, utc_now
+                  from app.config import NAVER_NEWS_API_URL
+                  from datetime import timedelta
+                  db  = get_db()
+                  now = utc_now()
+                  result = db.crawl_jobs.update_one(
+                    {
+                      "type":   "CRAWL_NAVER_NEWS",
+                      "status": {"$in": ["PENDING", "RUNNING"]},
+                    },
+                    {"$setOnInsert": {
+                      "type":      "CRAWL_NAVER_NEWS",
+                      "status":    "PENDING",
+                      "priority":  90,
+                      "payload":   {"url": NAVER_NEWS_API_URL},
+                      "attempts":  0,
+                      "nextRunAt": now + timedelta(seconds=1),
+                      "createdAt": now,
+                      "updatedAt": now,
+                    }},
+                    upsert=True,
+                  )
+                  if result.upserted_id:
+                    print("[hp-naver-news-cronjob] 뉴스 잡 등록 완료")
+                  else:
+                    print("[hp-naver-news-cronjob] 이미 처리 중인 잡이 있음, 건너뜀")
+              envFrom:
+                - secretRef:
+                    name: hp-app-secret
+                - configMapRef:
+                    name: hp-config
+              resources:
+                requests:
+                  cpu: "50m"
+                  memory: "64Mi"
+                limits:
+                  cpu: "100m"
+                  memory: "128Mi"
+          restartPolicy: OnFailure

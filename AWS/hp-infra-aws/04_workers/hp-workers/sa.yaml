@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: hp-workers-eso-sa
+  namespace: hp-workers
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::681224237958:role/eks-hp-workers-secret-manager-role
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: s3-thumbnails-sa
+  namespace: hp-workers
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::681224237958:role/eks-s3-thumbnails-role

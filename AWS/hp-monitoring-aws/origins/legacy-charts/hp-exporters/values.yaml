@@ -1,0 +1,73 @@
+# ============================================================
+# hp-exporters values.yaml
+#
+# 각 exporter마다 Deployment + Service + ServiceMonitor 3종 세트를 만듦
+# 바뀌는 것: image / args / containerPort / secret 유무
+# 안 바뀌는 것: nodepool, tolerations, resources → defaults로 관리
+# ============================================================
+
+defaults:
+  namespace: observability
+  nodeSelector:
+    nodepool: obs
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: obs
+      effect: NoSchedule
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+  imagePullPolicy: IfNotPresent  # 명시적으로 선언 (digest 기반 배포 시 Always로 변경)
+  smInterval: 60s
+  smPath: /metrics
+  release: kps
+
+# ------------------------------------------------------------
+# exporter 목록
+#
+# 필수: name, image, containerPort, args
+# 선택:
+#   secret         → env로 주입할 시크릿 (없으면 생략)
+#     name         → Secret 이름
+#     envKey       → 컨테이너 env 변수 이름
+#     secretKey    → Secret 안의 key 이름
+# ------------------------------------------------------------
+exporters:
+
+  - name: mysqld-exporter-master
+    image: prom/mysqld-exporter:v0.17.2
+    containerPort: 9104
+    args:
+      - --mysqld.address=hp-rds-master.chemcscc2ik6.ap-northeast-2.rds.amazonaws.com:3306
+      - --mysqld.username=exporter
+    secret:
+      name: mysqld-exporter-master-auth
+      envKey: MYSQLD_EXPORTER_PASSWORD
+      secretKey: MYSQLD_EXPORTER_PASSWORD
+    # smPath, smInterval 생략 → defaults 사용
+
+  - name: mysqld-exporter-replica
+    image: prom/mysqld-exporter:v0.17.2
+    containerPort: 9104
+    args:
+      - --mysqld.address=hp-rds-replica.chemcscc2ik6.ap-northeast-2.rds.amazonaws.com:3306
+      - --mysqld.username=exporter
+    secret:
+      name: mysqld-exporter-replica-auth
+      envKey: MYSQLD_EXPORTER_PASSWORD
+      secretKey: MYSQLD_EXPORTER_PASSWORD
+    # smPath, smInterval 생략 → defaults 사용
+
+  - name: redis-exporter
+    image: oliver006/redis_exporter:v1.69.0
+    containerPort: 9121
+    args:
+      - --redis.addr=rediss://clustercfg.hp-redis-cluster.ellyj6.apn2.cache.amazonaws.com:6379
+      - --skip-tls-verification
+    # secret 없음 → 생략
+    # smPath, smInterval 생략 → defaults 사용

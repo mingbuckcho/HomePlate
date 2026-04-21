@@ -1,0 +1,24 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: sonarqube
+  namespace: cicd
+  labels:
+    app: sonarqube
+    release: kps
+spec:
+  selector:
+    matchLabels:
+      app: sonarqube
+  namespaceSelector:
+    matchNames:
+      - cicd
+  endpoints:
+    - port: http
+      path: /api/monitoring/metrics
+      interval: 60s
+      authorization:
+        type: Bearer
+        credentials:
+          name: sonarqube-monitoring-auth
+          key: passcode

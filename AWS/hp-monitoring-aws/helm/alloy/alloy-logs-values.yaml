@@ -1,0 +1,97 @@
+controller:
+  type: daemonset
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: obs
+      effect: NoSchedule
+    - key: dedicated
+      operator: Equal
+      value: data
+      effect: NoSchedule
+    - key: dedicated
+      operator: Equal
+      value: cicd
+      effect: NoSchedule
+
+serviceAccount:
+  create: true
+  automountServiceAccountToken: true
+  annotations: {}
+
+alloy:
+  mounts:
+    varlog: true
+    dockercontainers: false
+
+  configMap:
+    create: true
+    content: |-
+      // =========================
+      // Alloy Logs (EKS) - DaemonSet
+      // 목표: 기존 Loki 라벨 스키마(namespace/app) 유지
+      // =========================
+
+      discovery.kubernetes "pods" {
+        role = "pod"
+      }
+
+      discovery.relabel "pods" {
+        targets = discovery.kubernetes.pods.targets
+
+        rule {
+          source_labels = ["__meta_kubernetes_namespace"]
+          target_label  = "namespace"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_name"]
+          target_label  = "pod"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_container_name"]
+          target_label  = "container"
+        }
+
+        // 1) pod label "app"가 있을 때만 app 세팅
+        rule {
+          source_labels = ["__meta_kubernetes_pod_label_app"]
+          target_label  = "app"
+          regex         = "(.+)"
+          action        = "replace"
+        }
+
+        // 2) (fallback) pod label "app"가 비어있을 때만 app.kubernetes.io/name으로 채움
+        //     source_labels를 2개 묶어서 "첫 값이 비었을 때만" 매칭되게 함
+        rule {
+          source_labels = ["__meta_kubernetes_pod_label_app", "__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+          target_label  = "app"
+          regex         = "^$;(.+)$"
+          replacement   = "$1"
+          action        = "replace"
+        }
+      }
+
+      loki.source.kubernetes "pods" {
+        targets    = discovery.relabel.pods.output
+        forward_to = [loki.write.default.receiver]
+      }
+
+      loki.write "default" {
+        endpoint {
+          url = "http://loki-gateway.observability.svc.cluster.local/loki/api/v1/push"
+          headers = { "X-Scope-OrgID" = "homeplate" }
+        }
+        external_labels = { cluster = "hp-eks" }
+      }
+
+  extraPorts: []
+
+service:
+  enabled: true
+  type: ClusterIP
+
+ingress:
+  enabled: false
+
+serviceMonitor:
+  enabled: false

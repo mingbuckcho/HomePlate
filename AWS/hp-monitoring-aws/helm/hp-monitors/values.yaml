@@ -1,0 +1,168 @@
+# ============================================================
+# hp-monitors values.yaml
+# 구조: serviceMonitors[], metricsServices[]
+# 공통 default는 defaults 블록으로 override 가능
+# ============================================================
+
+defaults:
+  interval: 60s
+  path: /metrics
+  release: kps   # Prometheus-Operator가 SM 감지할 때 쓰는 라벨
+
+# ------------------------------------------------------------
+# ServiceMonitor 목록
+# 필수: name, namespace, selector, port
+# 선택: path(기본 /metrics), interval(기본 60s), auth
+#
+# auth 타입:
+#   bearer:
+#     secretName: <k8s Secret 이름>
+#     secretKey:  <Secret 안의 key>
+#   basic:
+#     secretName: <k8s Secret 이름>
+#     usernameKey: username
+#     passwordKey: password
+# ------------------------------------------------------------
+serviceMonitors:
+
+  # ── observability ──────────────────────────────────────────
+  - name: alloy-collector
+    namespace: observability
+    selector:
+      app.kubernetes.io/instance: alloy-collector
+      app.kubernetes.io/name: alloy
+    port: http-metrics
+
+  - name: alloy-logs
+    namespace: observability
+    selector:
+      app.kubernetes.io/instance: alloy-logs
+      app.kubernetes.io/name: alloy
+    port: http-metrics
+
+  - name: mysqld-exporter-master
+    namespace: observability
+    selector:
+      app: mysqld-exporter-master
+    port: http
+
+  - name: mysqld-exporter-replica
+    namespace: observability
+    selector:
+      app: mysqld-exporter-replica
+    port: http
+
+  - name: redis-exporter
+    namespace: observability
+    selector:
+      app: redis-exporter
+    port: http
+
+  # ── platform ───────────────────────────────────────────────
+  - name: aws-load-balancer-controller
+    namespace: kube-system
+    selector:
+      app.kubernetes.io/name: aws-load-balancer-controller
+      app.kubernetes.io/instance: aws-load-balancer-controller
+    port: http-metrics
+
+  - name: istio-ingress
+    namespace: istio-system
+    selector:
+      app: istio-ingress
+      istio: ingress
+    port: http-envoy-prom
+    path: /stats/prometheus
+
+  - name: istiod
+    namespace: istio-system
+    selector:
+      app: istiod
+      istio: pilot
+    port: http-monitoring
+
+  # ── delivery ───────────────────────────────────────────────
+  - name: argocd-repo-server
+    namespace: argocd
+    selector:
+      app.kubernetes.io/instance: argocd
+      app.kubernetes.io/name: argocd-repo-server
+    port: http-metrics
+
+  - name: argocd-applicationset-controller
+    namespace: argocd
+    selector:
+      app.kubernetes.io/instance: argocd
+      app.kubernetes.io/name: argocd-applicationset-controller
+    port: http-metrics
+
+  - name: sonarqube
+    namespace: cicd
+    selector:
+      app: sonarqube
+    port: http
+    path: /api/monitoring/metrics
+    auth:
+      type: bearer
+      secretName: sonarqube-monitoring-auth
+      secretKey: passcode
+
+  # ── application ────────────────────────────────────────────
+  - name: aiops-backend
+    namespace: aiops
+    selector:
+      app: aiops-backend
+    port: http
+
+# ------------------------------------------------------------
+# metrics 전용 Service 목록
+# "기존 Service에 metrics 포트 없음" 패턴 반복 대응
+#
+# 필수: name, namespace, selector, ports[]
+#   ports[].name        Service port 이름
+#   ports[].port        Service port 번호
+#   ports[].targetPort  Pod의 named port or 번호
+# ------------------------------------------------------------
+metricsServices:
+
+  # ── platform ───────────────────────────────────────────────
+  - name: aws-load-balancer-controller-metrics
+    namespace: kube-system
+    selector:
+      app.kubernetes.io/name: aws-load-balancer-controller
+      app.kubernetes.io/instance: aws-load-balancer-controller
+    ports:
+      - name: http-metrics
+        port: 8080
+        targetPort: metrics-server
+
+  - name: istio-ingress-metrics
+    namespace: istio-system
+    selector:
+      app: istio-ingress
+      istio: ingress
+    ports:
+      - name: http-envoy-prom
+        port: 15090
+        targetPort: http-envoy-prom
+
+  # ── delivery ───────────────────────────────────────────────
+  - name: argocd-repo-server-metrics
+    namespace: argocd
+    selector:
+      app.kubernetes.io/instance: argocd
+      app.kubernetes.io/name: argocd-repo-server
+    ports:
+      - name: http-metrics
+        port: 8084
+        targetPort: metrics
+
+  - name: argocd-applicationset-controller-metrics
+    namespace: argocd
+    selector:
+      app.kubernetes.io/instance: argocd
+      app.kubernetes.io/name: argocd-applicationset-controller
+    ports:
+      - name: http-metrics
+        port: 8080
+        targetPort: metrics

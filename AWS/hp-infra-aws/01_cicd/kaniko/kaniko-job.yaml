@@ -1,0 +1,33 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: build-kubectl-openssl
+  namespace: cicd
+spec:
+  # [추가] 작업 완료(Success/Failed) 후 100초 뒤에 이 Job과 Pod를 자동으로 삭제합니다.
+  ttlSecondsAfterFinished: 100 
+  
+  backoffLimit: 1
+  template:
+    spec:
+      serviceAccountName: kaniko-sa
+      containers:
+      - name: kaniko
+        image: gcr.io/kaniko-project/executor:latest
+        args:
+        - "--context=git://github.com/homeplate-project/hp-infra-aws.git"
+        - "--git=branch=main" 
+        - "--dockerfile=docker/kubectl-openssl/Dockerfile"
+        - "--destination=681224237958.dkr.ecr.ap-northeast-2.amazonaws.com/hp-infra/kubectl-openssl:v51"
+        env:
+        - name: GIT_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: git-creds
+              key: username
+        - name: GIT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: git-creds
+              key: password
+      restartPolicy: Never

@@ -1,0 +1,192 @@
+pipeline {
+    agent {
+        kubernetes {
+            yaml '''
+            apiVersion: v1
+            kind: Pod
+            spec:
+              containers:
+              - name: node
+                image: node:20-alpine
+                command: ['sleep']
+                args: ['9999999']
+                resources:
+                  requests:
+                    memory: "512Mi"
+                  limits:
+                    memory: "6Gi"
+              - name: sonar
+                image: sonarsource/sonar-scanner-cli:latest
+                command: ['sleep']
+                args: ['9999999']
+              - name: kaniko
+                image: gcr.io/kaniko-project/executor:debug
+                command: ['sleep']
+                args: ['9999999']
+                resources:
+                  requests:
+                    memory: "512Mi"
+                  limits:
+                    memory: "6Gi"
+              - name: trivy
+                image: aquasec/trivy:latest
+                command: ['sleep']
+                args: ['9999999']
+                resources:
+                  requests:
+                    memory: "256Mi"
+                  limits:
+                    memory: "2Gi"
+              - name: jnlp
+                image: jenkins/inbound-agent:3355.v388858a_47b_33-3-jdk21
+            '''
+        }
+    }
+
+    // 파이프라인 전역에서 사용할 환경 변수 정의
+    environment {
+        AWS_ACCOUNT_ID = "681224237958"
+        AWS_REGION = "ap-northeast-2"
+        ECR_URL = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+        IMAGE_NAME = "hp-frontend" // ECR 리포지토리 이름과 일치해야 함
+        
+        VERSION = "0.1" 
+        IMAGE_TAG = "v${VERSION}.${env.BUILD_NUMBER}"
+
+        // AWS 자격 증명 ID (젠킨스에 등록한 ID)
+        AWS_CREDS_ID = "aws-credentials-id" 
+        SONAR_SERVER = "SonarQube-Server"
+        
+        // Next.js 빌드 타임(build-arg)에 주입할 프론트엔드 환경 변수들
+        API_BASE_URL = "https://api.homeplate.com"
+        RUM_ENABLED = "true"
+        RUM_ENDPOINT = "https://rum.homeplate.com/v1"
+        RUM_APP_NAME = "homeplate-frontend"
+        RUM_ENV = "production"
+        RUM_CLUSTER = "prod-cluster-1"
+        RUM_SAMPLE_RATE = "100"
+    }
+
+    stages {
+        stage('1. Checkout Code') {
+            steps {
+                // GitHub 레포지토리에서 최신 코드를 내려받습니다.
+                checkout scm
+            }
+        }
+
+        stage('2. Install & Verify') {
+            steps {
+                container('node') {
+                    // Next.js 빌드 시점에 에러가 나지 않도록 환경 변수를 미리 OS에 주입 후 검증
+                    sh """
+                    export NEXT_PUBLIC_API_BASE_URL="${API_BASE_URL}"
+                    export NEXT_PUBLIC_RUM_ENABLED="${RUM_ENABLED}"
+                    export NEXT_PUBLIC_RUM_ENDPOINT="${RUM_ENDPOINT}"
+                    export NEXT_PUBLIC_RUM_APP_NAME="${RUM_APP_NAME}"
+                    export NEXT_PUBLIC_RUM_ENV="${RUM_ENV}"
+                    export NEXT_PUBLIC_RUM_CLUSTER="${RUM_CLUSTER}"
+                    export NEXT_PUBLIC_RUM_SAMPLE_RATE="${RUM_SAMPLE_RATE}"
+                    
+                    npm ci          # package-lock.json 기준으로 정확한 버전의 의존성 설치
+                    npm run build   # 실제 빌드 테스트 (조기 실패 유도하여 리소스 낭비 방지)
+                    """
+                }
+            }
+        }
+
+        stage('3. SonarQube Analysis') {
+            steps {
+                container('sonar') {
+                    withCredentials([string(credentialsId: 'sonar-frontend-token', variable: 'SONAR_TOKEN')]) {
+                            sh """
+                            sonar-scanner \
+                              -Dsonar.projectKey=hp-frontend \
+                              -Dsonar.sources=. \
+                              -Dsonar.host.url=http://sonarqube.cicd.svc.cluster.local:9000 \
+                              -Dsonar.login=${SONAR_TOKEN} \
+                              -Dsonar.exclusions=node_modules/**,.next/**
+                            """
+                    }
+                }
+            }
+        }
+
+        stage('4. Build & Push Image (Kaniko)') {
+            steps {
+                container('kaniko') {
+                    withCredentials([[
+                        $class: 'AmazonWebServicesCredentialsBinding', 
+                        credentialsId: "${AWS_CREDS_ID}", 
+                        accessKeyVariable: 'AWS_ACCESS_KEY_ID', 
+                        secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+                    ]]) {
+                        sh """
+                        echo '{"credsStore":"ecr-login"}' > /kaniko/.docker/config.json
+
+                        export AWS_REGION=${AWS_REGION}
+
+                        /kaniko/executor \\
+                          --context `pwd` \\
+                          --dockerfile `pwd`/Dockerfile \\
+                          --destination ${ECR_URL}/${IMAGE_NAME}:${IMAGE_TAG} \\
+                          --build-arg NEXT_PUBLIC_API_BASE_URL=${API_BASE_URL} \\
+                          --build-arg NEXT_PUBLIC_RUM_ENABLED=${RUM_ENABLED} \\
+                          --build-arg NEXT_PUBLIC_RUM_ENDPOINT=${RUM_ENDPOINT} \\
+                          --build-arg NEXT_PUBLIC_RUM_APP_NAME=${RUM_APP_NAME} \\
+                          --build-arg NEXT_PUBLIC_RUM_ENV=${RUM_ENV} \\
+                          --build-arg NEXT_PUBLIC_RUM_CLUSTER=${RUM_CLUSTER} \\
+                          --build-arg NEXT_PUBLIC_RUM_SAMPLE_RATE=${RUM_SAMPLE_RATE}
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('5. Vulnerability Scan (Trivy)') {
+            steps {
+                container('trivy') {
+                    // AWS Credentials를 환경 변수로 로드
+                    withCredentials([[
+                        $class: 'AmazonWebServicesCredentialsBinding', 
+                        credentialsId: "${AWS_CREDS_ID}", 
+                        accessKeyVariable: 'AWS_ACCESS_KEY_ID', 
+                        secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+                    ]]) {
+                        sh """
+                        export AWS_REGION=${AWS_REGION}
+                        
+                        trivy image \\
+                          --severity CRITICAL,HIGH \\
+                          --exit-code 0 \\
+                          --format table \\
+                          ${ECR_URL}/${IMAGE_NAME}:${IMAGE_TAG}
+                        """
+                    }
+                }
+            }
+        }
+        stage('6. Update Manifest & Trigger ArgoCD') {
+            steps {
+                // Git이 기본적으로 설치되어 있는 jnlp 컨테이너에서 실행합니다.
+                container('jnlp') {
+                    // GitHub 접근을 위한 Token/ID를 가져옵니다.
+                    withCredentials([usernamePassword(credentialsId: 'github-credentials', passwordVariable: 'GIT_TOKEN', usernameVariable: 'GIT_USER')]) {
+                        sh """
+                        git clone https://${GIT_USER}:${GIT_TOKEN}@github.com/homeplate-project/hp-infra-aws.git
+                        cd hp-infra-aws
+                    
+                        sed -i "s|image:.*hp-frontend:.*|image: ${ECR_URL}/${IMAGE_NAME}:${IMAGE_TAG}|g" 03_core_apps/hp-core/front-deployment.yaml
+
+                        git config user.email "jenkins@homeplate.com"
+                        git config user.name "Jenkins-CI"
+                        git add .
+                        git commit -m "chore: update hp-frontend image to ${IMAGE_TAG} (ECR)"
+                        git push origin main
+                        """
+                    }
+                }
+            }
+        }
+    }
+}

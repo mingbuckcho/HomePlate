@@ -1,0 +1,11 @@
+watchNamespaces:
+- hp-core
+- hp-workers
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 384Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi

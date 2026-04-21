@@ -1,0 +1,72 @@
+# CronJob: 10분마다 MongoDB staging → MariaDB 적재
+# Kafka는 downstream 알림(가격변동 이벤트 전파)에만 사용
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: hp-exporter
+  namespace: hp-workers
+  labels:
+    app: hp-exporter
+spec:
+  schedule: "*/10 * * * *"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: s3-thumbnails-sa
+          nodeSelector:
+            nodepool: app
+          volumes:
+            - name: cluster-ca
+              secret:
+                secretName: ticketing-cluster-ca-cert
+                items:
+                  - key: ca.crt
+                    path: ca.crt
+            - name: user-tls
+              secret:
+                secretName: hp-exporter
+                items:
+                  - key: user.crt
+                    path: user.crt
+                  - key: user.key
+                    path: user.key
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+          containers:
+            - name: hp-exporter
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                seccompProfile:
+                  type: RuntimeDefault
+              image: "681224237958.dkr.ecr.ap-northeast-2.amazonaws.com/hp-ingestion:v0.1.3"
+              command: ["python", "-m", "app.exporter"]
+              envFrom:
+                - configMapRef:
+                    name: hp-exporter-config
+                - secretRef:
+                    name: hp-exporter-secret
+                - secretRef:
+                    name: hp-rds-secret
+              volumeMounts:
+                - name: cluster-ca
+                  mountPath: /etc/kafka/cluster-ca
+                  readOnly: true
+                - name: user-tls
+                  mountPath: /etc/kafka/user-tls
+                  readOnly: true
+              resources:
+                requests:
+                  cpu: "100m"
+                  memory: "128Mi"
+                limits:
+                  cpu: "300m"
+                  memory: "256Mi"
+          restartPolicy: OnFailure

@@ -1,0 +1,15 @@
+apiVersion: external-secrets.io/v1
+kind: SecretStore
+metadata:
+  name: hp-backend-store
+  namespace: hp-core
+spec:
+  provider:
+    aws:
+      region: ap-northeast-2
+      service: SecretsManager
+      auth:
+        jwt:
+          serviceAccountRef:
+            name: kaniko-sa
+      # IRSA(kaniko-sa 같은 것)를 사용한다면 별도의 인증 설정 없이도 작동합니다.

@@ -1,0 +1,133 @@
+# =============================================================================
+# Argo Rollouts - AnalysisTemplate
+# 목적: 카나리 배포 단계별 자동 성공/실패 판단 (SLI 기반)
+# 대상: hp-backend-core, hp-backend-booking, hp-backend-queue,
+#       hp-backend-worker, hp-frontend (네임스페이스: hp-core)
+# 사용법: Rollout 리소스의 steps[].analysis.templates 에서 참조 시
+#         args로 service-name만 바꿔서 재사용
+# =============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: hp-canary-analysis
+  namespace: hp-core
+spec:
+  args:
+    # Rollout이 주입하는 서비스명
+    # 예: hp-backend-core / hp-backend-booking / hp-backend-queue
+    #     hp-backend-worker / hp-frontend
+    - name: service-name
+
+  metrics:
+
+    # -------------------------------------------------------------------------
+    # [SLI 1] 에러율 — 5xx 비율 1% 미만이어야 다음 단계 진행
+    # 임계값: warning 1% / critical 5% (values.yaml 기준)
+    # -------------------------------------------------------------------------
+    - name: error-rate
+      interval: 60s       # 1분마다 평가
+      count: 5            # 5회 연속 통과해야 성공
+      failureLimit: 1     # 1회라도 실패하면 롤백
+      provider:
+        prometheus:
+          address: http://kps-prometheus.monitoring.svc.cluster.local:9090
+          query: |
+            sum(
+              rate(istio_requests_total{
+                destination_service_name="{{ args.service-name }}",
+                destination_service_namespace="hp-core",
+                response_code=~"5.."
+              }[2m])
+            )
+            /
+            clamp_min(
+              sum(
+                rate(istio_requests_total{
+                  destination_service_name="{{ args.service-name }}",
+                  destination_service_namespace="hp-core"
+                }[2m])
+              ),
+              0.001
+            )
+      successCondition: result[0] < 0.01   # 1% 미만 → 성공
+      failureCondition: result[0] >= 0.05  # 5% 이상 → 즉시 롤백
+
+    # -------------------------------------------------------------------------
+    # [SLI 2] 레이턴시 p99 — 1초 미만이어야 다음 단계 진행
+    # 임계값: warning 1s / critical 3s (values.yaml 기준)
+    # -------------------------------------------------------------------------
+    - name: latency-p99
+      interval: 60s
+      count: 5
+      failureLimit: 1
+      provider:
+        prometheus:
+          address: http://kps-prometheus.monitoring.svc.cluster.local:9090
+          query: |
+            histogram_quantile(0.99,
+              sum by (le) (
+                rate(istio_request_duration_milliseconds_bucket{
+                  destination_service_name="{{ args.service-name }}",
+                  destination_service_namespace="hp-core"
+                }[2m])
+              )
+            ) / 1000
+      successCondition: result[0] < 1.0   # 1초 미만 → 성공
+      failureCondition: result[0] >= 3.0  # 3초 이상 → 즉시 롤백
+
+    # -------------------------------------------------------------------------
+    # [SLI 3] Pod 안정성 — CrashLoopBackOff 0개여야 통과
+    # -------------------------------------------------------------------------
+    - name: pod-crashloop
+      interval: 60s
+      count: 5
+      failureLimit: 0     # 1회도 허용 안 함
+      provider:
+        prometheus:
+          address: http://kps-prometheus.monitoring.svc.cluster.local:9090
+          query: |
+            max(
+              kube_pod_container_status_waiting_reason{
+                namespace="hp-core",
+                reason="CrashLoopBackOff"
+              }
+              * on(namespace, pod) group_left(label_app)
+              kube_pod_labels{
+                label_app="{{ args.service-name }}"
+              }
+            ) or vector(0)
+      successCondition: result[0] == 0   # CrashLoop 없음 → 성공
+      failureCondition: result[0] > 0    # CrashLoop 발생 → 즉시 롤백
+
+---
+# =============================================================================
+# [CI/CD 담당자에게] Rollout 연결 예시
+# 아래처럼 service-name args만 바꿔서 5개 서비스 모두 재사용 가능
+# =============================================================================
+#
+# spec:
+#   strategy:
+#     canary:
+#       steps:
+#         - setWeight: 10
+#         - analysis:
+#             templates:
+#               - templateName: hp-canary-analysis
+#             args:
+#               - name: service-name
+#                 value: hp-backend-core   # ← 서비스마다 이 값만 변경
+#         - setWeight: 50
+#         - analysis:
+#             templates:
+#               - templateName: hp-canary-analysis
+#             args:
+#               - name: service-name
+#                 value: hp-backend-core
+#         - setWeight: 100
+#
+# 서비스별 value 값:
+#   hp-backend-core    → value: hp-backend-core
+#   hp-backend-booking → value: hp-backend-booking
+#   hp-backend-queue   → value: hp-backend-queue
+#   hp-backend-worker  → value: hp-backend-worker
+#   hp-frontend        → value: hp-frontend

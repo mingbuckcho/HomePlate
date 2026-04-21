@@ -1,0 +1,185 @@
+-- -----------------------------------------------------
+-- Schema HomePlate
+-- -----------------------------------------------------
+DROP SCHEMA IF EXISTS `HomePlate`;
+
+CREATE SCHEMA IF NOT EXISTS `HomePlate` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE `HomePlate`;
+
+-- 외래키 체크 잠시 해제
+SET foreign_key_checks = 0;
+
+-- ==========================================
+-- 1. 회원 및 인증 (Users)
+-- ==========================================
+CREATE TABLE IF NOT EXISTS `users` (
+    `user_id`       BIGINT          NOT NULL AUTO_INCREMENT COMMENT '사용자 고유 ID',
+    `email`         VARCHAR(100)    NOT NULL COMMENT '로그인 이메일',
+    `password`      VARCHAR(255)    NOT NULL COMMENT '암호화된 비밀번호',
+    `user_name`     VARCHAR(50)     NOT NULL COMMENT '사용자 실명',
+    `phone`         VARCHAR(20)     NOT NULL COMMENT '휴대폰 번호',
+    `created_at`    DATETIME        DEFAULT CURRENT_TIMESTAMP COMMENT '가입일시',
+    `updated_at`    DATETIME        DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`user_id`),
+    UNIQUE INDEX `uk_email` (`email` ASC)
+) ENGINE = InnoDB COMMENT = '회원 정보';
+
+-- ==========================================
+-- 2. 마스터 데이터 (Master Data)
+-- ==========================================
+CREATE TABLE IF NOT EXISTS `teams` (
+    `team_id`       VARCHAR(10)     NOT NULL COMMENT '구단 코드 (LG, KIA, SSG...)',
+    `team_name`     VARCHAR(50)     NOT NULL COMMENT '구단명',
+    `team_logo`     VARCHAR(255)    NULL COMMENT '로고 이미지 URL',
+    PRIMARY KEY (`team_id`)
+) ENGINE = InnoDB COMMENT = 'KBO 구단 정보';
+
+CREATE TABLE IF NOT EXISTS `stadiums` (
+    `stadium_id`        VARCHAR(10)     NOT NULL COMMENT '구장 코드 (JAMSIL, GCH...)',
+    `stadium_name`      VARCHAR(50)     NOT NULL COMMENT '구장명',
+    `stadium_location`  VARCHAR(100)    NULL COMMENT '주소/위치',
+    PRIMARY KEY (`stadium_id`)
+) ENGINE = InnoDB COMMENT = '경기장 정보';
+
+-- ==========================================
+-- 3. 경기 및 좌석 정보 (Game & Seat)
+-- ==========================================
+CREATE TABLE IF NOT EXISTS `games` (
+    `game_id`        BIGINT          NOT NULL AUTO_INCREMENT,
+    `stadium_id`     VARCHAR(10)     NOT NULL COMMENT '경기 장소',
+    `teamA_id`       VARCHAR(10)     NOT NULL COMMENT '홈 팀',
+    `teamB_id`       VARCHAR(10)     NOT NULL COMMENT '원정 팀',
+    `game_start_at`  DATETIME        NOT NULL COMMENT '경기 시작 시간',
+    `ticket_open_at` DATETIME        NOT NULL COMMENT '예매 오픈 시간',
+    `game_status`    VARCHAR(20)     NOT NULL DEFAULT 'SCHEDULED' COMMENT 'SCHEDULED, OPEN, ENDED',
+    `max_seats`      INT             NOT NULL DEFAULT 0 COMMENT '총 판매 가능 좌석 수',
+    PRIMARY KEY (`game_id`),
+    INDEX `idx_game_date` (`game_start_at`),
+    CONSTRAINT `fk_game_stadium` FOREIGN KEY (`stadium_id`) REFERENCES `stadiums` (`stadium_id`),
+    CONSTRAINT `fk_teamA` FOREIGN KEY (`teamA_id`) REFERENCES `teams` (`team_id`),
+    CONSTRAINT `fk_teamB` FOREIGN KEY (`teamB_id`) REFERENCES `teams` (`team_id`)
+) ENGINE = InnoDB COMMENT = '경기 일정';
+
+CREATE TABLE IF NOT EXISTS `zones` (
+    `zone_id`       VARCHAR(30)     NOT NULL COMMENT 'PK: 구장ID-구역번호 (예: CHANGWON-101)',
+    `stadium_id`    VARCHAR(10)     NOT NULL,
+    `zone_name`     VARCHAR(50)     NOT NULL COMMENT '표시용 이름 (예: PREMIUM-101)',
+    `zone_number`   VARCHAR(10)     NOT NULL COMMENT '순수 구역 번호 (예: 101)',
+    `zone_grade`    VARCHAR(20)     NOT NULL COMMENT '좌석 등급 (PREMIUM, RED...)',
+    
+    PRIMARY KEY (`zone_id`),
+    CONSTRAINT `fk_zone_stadium` FOREIGN KEY (`stadium_id`) REFERENCES `stadiums` (`stadium_id`)
+) ENGINE = InnoDB COMMENT = '구장 내 구역 정보';
+
+CREATE TABLE IF NOT EXISTS `seats` (
+    `seat_id`       BIGINT          NOT NULL AUTO_INCREMENT,
+    `zone_id`       VARCHAR(30)     NOT NULL, -- zone_id 길이에 맞춰 30으로 설정 권장
+    `seat_row`      VARCHAR(5)      NOT NULL COMMENT '행 (A, B...)',
+    `seat_col`      INT             NOT NULL COMMENT '열 (1, 2...)',
+    `seat_code`     VARCHAR(20)     NULL COMMENT '식별코드 (101-A1)',
+    PRIMARY KEY (`seat_id`),
+    UNIQUE INDEX `uk_seat_code` (`zone_id`, `seat_row`, `seat_col`),
+    CONSTRAINT `fk_seat_zone` FOREIGN KEY (`zone_id`) REFERENCES `zones` (`zone_id`)
+) ENGINE = InnoDB COMMENT = '물리적 좌석 정보';
+
+-- ==========================================
+-- 4. 예매 및 결제 (Booking & Order)
+-- ==========================================
+CREATE TABLE IF NOT EXISTS `locks` (
+    `lock_id`       VARCHAR(36)     NOT NULL COMMENT 'UUID',
+    `game_id`       BIGINT          NOT NULL,
+    `seat_id`       BIGINT          NOT NULL, -- 여기도 seat_code(String)로 바꿀지 고민해볼 수 있지만, FK 유지를 위해 ID 유지
+    `user_id`       BIGINT          NOT NULL,
+    `expires_at`    DATETIME        NOT NULL COMMENT '만료 시간 (생성+5분)',
+    PRIMARY KEY (`lock_id`),
+    UNIQUE INDEX `uk_lock_game_seat` (`game_id`, `seat_id`), 
+    CONSTRAINT `fk_lock_game` FOREIGN KEY (`game_id`) REFERENCES `games` (`game_id`),
+    CONSTRAINT `fk_lock_seat` FOREIGN KEY (`seat_id`) REFERENCES `seats` (`seat_id`),
+    CONSTRAINT `fk_lock_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`)
+) ENGINE = InnoDB COMMENT = '좌석 선점 (동시성 제어)';
+
+CREATE TABLE IF NOT EXISTS `orders` (
+    `order_id`      BIGINT          NOT NULL AUTO_INCREMENT,
+    `user_id`       BIGINT          NOT NULL,
+    `game_id`       BIGINT          NOT NULL,
+    `total_price`   decimal         NOT NULL COMMENT '총 결제 금액',
+    `order_status`  VARCHAR(20)     NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING, PAID, CANCELLED',
+    `created_at`    DATETIME        DEFAULT CURRENT_TIMESTAMP,
+    `paid_at`       DATETIME        NULL,
+    `seat_list` VARCHAR(500)    NOT NULL COMMENT '임시 좌석 목록 (결제 전)', 
+    PRIMARY KEY (`order_id`),
+    CONSTRAINT `fk_order_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`),
+    CONSTRAINT `fk_order_game` FOREIGN KEY (`game_id`) REFERENCES `games` (`game_id`)
+) ENGINE = InnoDB COMMENT = '주문 내역';
+
+CREATE TABLE IF NOT EXISTS `tickets` (
+    `ticket_id`     VARCHAR(50)     NOT NULL COMMENT 'UUID 등 (길이 50 추천)',
+    `order_id`      BIGINT          NOT NULL,
+    `game_id`       BIGINT          NOT NULL COMMENT '조회 성능용 역정규화',
+    `seat_id`       BIGINT          NOT NULL,
+    `user_id`       BIGINT          NOT NULL,
+    `ticket_price`  decimal         NOT NULL COMMENT '실제 결제된 티켓 가격',
+    `ticket_status` VARCHAR(20)     NOT NULL DEFAULT 'ACTIVE' COMMENT 'ACTIVE, USED, CANCELLED',
+    `qr_code`       VARCHAR(255)    NULL COMMENT 'QR 데이터',
+    `created_at`    DATETIME        DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`ticket_id`),
+    UNIQUE INDEX `uk_ticket_seat` (`game_id`, `seat_id`), 
+    CONSTRAINT `fk_ticket_order` FOREIGN KEY (`order_id`) REFERENCES `orders` (`order_id`),
+    CONSTRAINT `fk_ticket_game` FOREIGN KEY (`game_id`) REFERENCES `games` (`game_id`),
+    CONSTRAINT `fk_ticket_seat` FOREIGN KEY (`seat_id`) REFERENCES `seats` (`seat_id`),
+    CONSTRAINT `fk_ticket_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`)
+) ENGINE = InnoDB COMMENT = '발권된 티켓';
+
+-- ==========================================
+-- 5. 구단 순위 정보 (Team Rankings)
+-- ==========================================
+CREATE TABLE IF NOT EXISTS `team_rankings` (
+    `ranking_id`    BIGINT          NOT NULL AUTO_INCREMENT,
+    `team_id`       VARCHAR(10)     NOT NULL COMMENT '구단 코드',
+    `rank_no`       INT             NOT NULL COMMENT '현재 순위 (1~10)',
+    `played`        INT             NOT NULL DEFAULT 0 COMMENT '경기 수',
+    `win`           INT             NOT NULL DEFAULT 0 COMMENT '승',
+    `loss`          INT             NOT NULL DEFAULT 0 COMMENT '패',
+    `draw`          INT             NOT NULL DEFAULT 0 COMMENT '무',
+    `win_rate`      DECIMAL(5, 3)   NOT NULL DEFAULT 0.000 COMMENT '승률 (0.xxx)',
+    `game_behind`   DECIMAL(4, 1)   NOT NULL DEFAULT 0.0 COMMENT '게임차',
+    `updated_at`    DATETIME        DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '데이터 갱신 시간',
+    PRIMARY KEY (`ranking_id`),
+    UNIQUE INDEX `uk_team_ranking` (`team_id`),
+    CONSTRAINT `fk_ranking_team` FOREIGN KEY (`team_id`) REFERENCES `teams` (`team_id`)
+) ENGINE = InnoDB COMMENT = 'KBO 구단 순위 (크롤링 데이터)';
+
+-- ==========================================
+-- 6. 야구 뉴스 (News Feed)
+-- ==========================================
+CREATE TABLE IF NOT EXISTS `news` (
+    `news_id`       BIGINT          NOT NULL AUTO_INCREMENT COMMENT '뉴스 ID',
+    `news_title`    VARCHAR(255)    NOT NULL COMMENT '기사 제목',
+    `news_url`      VARCHAR(512)    NOT NULL COMMENT '원본 기사 링크 (클릭 시 이동)',
+    `news_thumbnail` VARCHAR(512)   NULL     COMMENT '썸네일 이미지 URL',
+    `news_press`    VARCHAR(50)     NULL     COMMENT '언론사명 (예: OSEN, 연합뉴스)',
+    `published_at`  DATETIME        NOT NULL COMMENT '기사 발행 일시 (정렬 기준)',
+    `created_at`    DATETIME        DEFAULT CURRENT_TIMESTAMP COMMENT '데이터 수집(크롤링) 일시',
+    
+    PRIMARY KEY (`news_id`),
+    INDEX `idx_news_published` (`published_at`)
+) ENGINE = InnoDB COMMENT = '야구 뉴스 피드 (크롤링 데이터)';
+
+-- ==========================================
+-- 7. 구단 굿즈 (Team Goods) 
+-- ==========================================
+CREATE TABLE IF NOT EXISTS `goods` (
+    `goods_id`      BIGINT          NOT NULL AUTO_INCREMENT COMMENT '굿즈 ID',
+    `team_id`       VARCHAR(10)     NOT NULL COMMENT '구단 코드 (필터링용)',
+    `goods_name`    VARCHAR(100)    NOT NULL COMMENT '상품명',
+    `goods_price`   decimal         NOT NULL DEFAULT 0 COMMENT '가격 (원 단위)',
+    `goods_thumbnail` VARCHAR(512)  NULL     COMMENT '썸네일 이미지 URL',
+    `goods_url`     VARCHAR(512)    NOT NULL COMMENT '구매 링크 (클릭 시 외부 이동)',
+    `created_at`    DATETIME        DEFAULT CURRENT_TIMESTAMP COMMENT '데이터 수집 일시',
+    
+    PRIMARY KEY (`goods_id`),
+    INDEX `idx_goods_team` (`team_id`),
+    CONSTRAINT `fk_goods_team` FOREIGN KEY (`team_id`) REFERENCES `teams` (`team_id`)
+) ENGINE = InnoDB COMMENT = '구단 굿즈 정보 (크롤링 데이터)';
+
+SET foreign_key_checks = 1;

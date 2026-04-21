@@ -1,0 +1,177 @@
+# kube-prometheus-stack (kps) - EKS용 values (SSM-only, Ingress OFF)
+fullnameOverride: "kps"
+
+prometheusOperator:
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: obs
+      effect: NoSchedule
+  nodeSelector:
+    nodepool: obs
+
+kube-state-metrics:
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: obs
+      effect: NoSchedule
+  nodeSelector:
+    nodepool: obs
+
+prometheus-node-exporter:
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: obs
+      effect: NoSchedule
+
+# -------------------------------
+# Grafana: UI(로그/트레이스 조회 포함)
+# - Ingress OFF: 외부공개 안 함
+# - 접근은 SSM 접속 후 port-forward 전제
+# - admin 비번은 Secret "이름만" 참조(값 커밋 금지)
+# -------------------------------
+grafana:
+  enabled: true
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: obs
+      effect: NoSchedule
+  nodeSelector:
+    nodepool: obs
+
+  admin:
+    # 배포 시점에 kubectl로 생성할 Secret 이름(커밋 X)
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+
+  replicaCount: 1
+
+  persistence:
+    enabled: true
+    storageClassName: gp3
+    size: 5Gi
+
+  ingress:
+    enabled: false
+
+  # (선택) Grafana DS를 ConfigMap 라벨로 자동 주입할 때 사용
+  sidecar:
+    datasources:
+      enabled: true
+      label: grafana_datasource
+      labelValue: "1"
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+
+# -------------------------------
+# Prometheus: 메트릭 저장/쿼리/룰 평가
+# - 2AZ라면 replica 2 + zone anti-affinity(hard)로 분산 강제
+# - 저장은 gp3 PVC 50Gi, retention 15d
+# -------------------------------
+prometheus:
+  prometheusSpec:
+    enableRemoteWriteReceiver: true
+    replicas: 2
+    retention: 15d
+    scrapeInterval: 30s
+    evaluationInterval: 30s
+    tolerations:
+      - key: dedicated
+        operator: Equal
+        value: obs
+        effect: NoSchedule
+    nodeSelector:
+      nodepool: obs
+
+    # 2AZ 분산 강제 (같은 AZ에 2개가 같이 못 앉게)
+    podAntiAffinity: hard
+    podAntiAffinityTopologyKey: topology.kubernetes.io/zone
+
+    resources:
+      requests:
+        cpu: 500m
+        memory: 2Gi
+      limits:
+        cpu: "2"
+        memory: 4Gi
+
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: gp3
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 50Gi
+
+    # 온프레 외부 VM(IP 고정) scrape는 EKS에선 일단 제거
+    additionalScrapeConfigs: []
+
+    # Prometheus가 ‘다른 네임스페이스의 ServiceMonitor’를 보도록 KPS 값
+    serviceMonitorNamespaceSelector: {}
+    podMonitorNamespaceSelector: {}
+    probeNamespaceSelector: {}
+    ruleNamespaceSelector: {}
+
+# -------------------------------
+# Alertmanager: 알람 라우팅/전송
+# - CR(=AlertmanagerConfig)로 운영
+# - Slack webhook은 AlertmanagerConfig가 SecretKeySelector로 참조(Secret 값 커밋 금지)
+# -------------------------------
+alertmanager:
+  enabled: true
+  alertmanagerSpec:
+    replicas: 2
+    tolerations:
+      - key: dedicated
+        operator: Equal
+        value: obs
+        effect: NoSchedule
+    nodeSelector:
+      nodepool: obs
+
+    # AlertmanagerConfig 매칭 전략(너가 쓰던 방식 유지)
+    alertmanagerConfigMatcherStrategy:
+      type: None
+
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: gp3
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 2Gi
+
+# -------------------------------
+# EKS에서 control-plane 컴포넌트는 보통 직접 scrape 불가
+# (클러스터/운영정책에 따라 달라짐)
+# -------------------------------
+kubeEtcd:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+
+# -------------------------------
+# defaultRules: "전부 끄기" 대신,
+# EKS에서 scrape 못 하는 컴포넌트(etcd/scheduler/controller/proxy) 관련 기본 룰만 OFF
+# 나머지 기본 룰은 유용한 게 많아서 일단 유지(=안 건드림)
+# -------------------------------
+defaultRules:
+  create: true
+  rules:
+    etcd: false
+    kubeProxy: false
+    kubeControllerManager: false
+    kubeSchedulerAlerting: false
+    kubeSchedulerRecording: false

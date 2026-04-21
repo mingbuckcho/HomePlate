@@ -1,0 +1,70 @@
+# ────────────────────────────────────────────────────────────────────
+# 개발/테스트 환경 (dev)
+#
+# 설계 원칙:
+#   standalone 모드로 단일 노드만 실행한다
+#   리소스를 최소화해서 다른 서비스와 공존할 수 있게 한다
+# ────────────────────────────────────────────────────────────────────
+
+# standalone: 단일 인스턴스
+# replicaset은 같은 앱을 3개 띄우므로 리소스를 3배 사용한다
+# dev에서는 낭비이므로 standalone을 사용한다
+architecture: standalone
+
+persistence:
+  size: 50Gi
+  # storageClass를 지정하지 않으면
+  # 클러스터의 기본 StorageClass를 자동으로 사용한다
+  # kubectl get storageclass 로 기본값 확인 가능
+  storageClass: "gp3"
+
+resources:
+  requests:
+    # requests: Pod를 띄우기 위해 노드에서 반드시 확보해야 하는 최소 자원
+    # k8s 스케줄러가 이 값을 보고 어떤 노드에 배치할지 결정한다
+    cpu: "500m" # 0.1 코어
+    memory: "512Mi"
+  limits:
+    # limits: Pod가 사용할 수 있는 최대 자원
+    # CPU 초과: throttle (느려짐)
+    # Memory 초과: OOMKilled (강제 종료)
+    cpu: "800m" # 0.5 코어
+    memory: "1Gi"
+
+# ── 노드 셀렉터 ───────────────────────────────────────────────────────
+# MongoDB Pod를 nodepool=data 레이블이 붙은 노드에만 배치한다
+# 데이터 전용 노드를 따로 두는 것이 실무 표준이다
+# 이유:
+#   DB와 앱이 같은 노드에 있으면 앱이 리소스를 많이 쓸 때
+#   DB 성능에 영향을 준다
+#   전용 노드를 분리하면 서로 간섭하지 않는다
+nodeSelector:
+  nodepool: data
+
+# ── Toleration ────────────────────────────────────────────────────────
+# Taint가 걸린 노드에도 이 Pod를 배치할 수 있도록 허용한다
+#
+# Taint/Toleration 개념:
+#   Taint: 노드에 거부 딱지를 붙인다
+#          "나는 특별한 Pod만 받겠다"
+#   Toleration: Pod에 허용 딱지를 붙인다
+#               "나는 저 Taint를 감수할 수 있다"
+#
+#   예:
+#     data 노드에 Taint 설정:
+#       kubectl taint nodes <노드명> dedicated=data:NoSchedule
+#     → 일반 Pod는 이 노드에 배치되지 않는다
+#     → Toleration이 있는 Pod만 배치된다
+#
+#   NoSchedule: Toleration 없는 Pod는 스케줄링 자체를 거부한다
+#   (다른 effect: PreferNoSchedule, NoExecute)
+tolerations:
+  - key: "dedicated"
+    operator: "Equal"
+    value: "data"
+    effect: "NoSchedule"
+
+metrics:
+  # Prometheus 연동 모니터링 활성화
+  # Prometheus가 이 exporter를 통해 MongoDB 메트릭을 수집한다
+  enabled: true

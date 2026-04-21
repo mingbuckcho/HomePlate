@@ -1,0 +1,34 @@
+# ────────────────────────────────────────────────────────────────────
+# 환경 공통 설정
+# dev/prod 모두 동일하게 적용된다
+# ────────────────────────────────────────────────────────────────────
+
+auth:
+  enabled: true
+
+  # values에 비밀번호를 직접 쓰지 않는다
+  # 위에서 만든 Secret 이름을 참조한다
+  # Helm이 알아서 해당 Secret에서 값을 가져온다
+  existingSecret: mongodb-auth
+
+  # Secret의 각 키와 MongoDB 설정을 매핑한다
+  existingSecretPerPasswordKey:
+    rootPassword: mongodb-root-password
+
+  # 앱 계정은 여기서 만들지 않는다
+  # 설치 후 mongosh로 직접 생성한다 (Step 8)
+  # 이유:
+  #   Helm이 계정을 만들면 비밀번호를 values에 넣어야 한다
+  #   직접 만들면 Secret → mongosh 방식으로 안전하게 관리할 수 있다
+
+service:
+  # ClusterIP: 클러스터 내부에서만 접근 가능
+  # MongoDB를 외부에 직접 노출하지 않는다 (보안 기본값)
+  # 외부 접근이 필요하면 port-forward를 사용한다
+  type: ClusterIP
+  port: 27017
+
+persistence:
+  # PVC(영속 볼륨)를 사용해야 Pod가 재시작돼도 데이터가 유지된다
+  # false로 하면 Pod가 죽으면 데이터도 사라진다 (절대 운영 금지)
+  enabled: true

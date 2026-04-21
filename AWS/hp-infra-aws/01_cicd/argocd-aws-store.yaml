@@ -1,0 +1,14 @@
+apiVersion: external-secrets.io/v1
+kind: SecretStore
+metadata:
+  name: argocd-aws-store
+  namespace: argocd # 👈 반드시 ExternalSecret과 같은 'argocd'여야 합니다!
+spec:
+  provider:
+    aws:
+      region: ap-northeast-2
+      service: SecretsManager
+      auth:
+        jwt:
+          serviceAccountRef:
+            name: argocd-repo-server # ArgoCD가 기본으로 쓰는 SA입니다.

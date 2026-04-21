@@ -1,0 +1,23 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: hp-platform-observer-readonly
+rules:
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: hp-platform-observer-readonly
+rules:
+  # core는 * 금지 (secrets 방지)
+  - apiGroups: [""]
+    resources: ["pods","services","endpoints","configmaps","events","namespaces"]
+    verbs: ["get","list","watch"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+
+  # 나머지 그룹은 필요범위만
+  - apiGroups: ["apps","batch","autoscaling","policy","networking.k8s.io"]
+    resources: ["*"]
+    verbs: ["get","list","watch"]
+

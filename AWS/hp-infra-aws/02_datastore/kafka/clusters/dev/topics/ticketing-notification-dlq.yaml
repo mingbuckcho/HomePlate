@@ -1,0 +1,14 @@
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: ticketing-notification-dlq
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: ticketing
+spec:
+  partitions: 3
+  replicas: 1
+  config:
+    retention.ms: "604800000"  # 7일
+    compression.type: lz4
+    cleanup.policy: delete

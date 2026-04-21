@@ -1,0 +1,50 @@
+## [Local] 로컬 개발 환경 (파일명: application-local.yml)
+#spring:
+#  config:
+#    activate:
+#      on-profile: local
+#
+#  # 1. 로컬 DB (단일 연결)
+#  datasource:
+#    url: jdbc:mysql://localhost:3306/HomePlate?useSSL=false&allowPublicKeyRetrieval=true&useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Seoul
+#    username: root
+#    password: 1234
+#    driver-class-name: com.mysql.cj.jdbc.Driver
+#    hikari:
+#      connection-init-sql: "SET NAMES utf8mb4"
+#
+#  # 2. 로컬 Redis
+#  data:
+#    redis:
+#      host: localhost
+#      port: 6379
+#
+#  # 3. 로컬 Kafka
+#  kafka:
+#    bootstrap-servers: localhost:9092
+#
+#  # 4. 로컬 JPA (공통 설정을 덮어씀)
+#  jpa:
+#    hibernate:
+#      ddl-auto: update  # 개발용: 테이블 자동 생성/수정
+#    connection:
+#      characterEncoding: UTF-8
+#      charSet: UTF-8
+#      useUnicode: true
+#
+## 5. 로컬 모니터링 설정
+#management:
+#  endpoints:
+#    web:
+#      exposure:
+#        include: health,info
+#  endpoint:
+#    prometheus:
+#      enabled: false
+#  prometheus:
+#    metrics:
+#      export:
+#        enabled: false
+#
+#TOPIC_NOTIFICATION: ticketing-notification
+#SPRING_KAFKA_CONSUMER_GROUP_ID: ticketing-notification-group

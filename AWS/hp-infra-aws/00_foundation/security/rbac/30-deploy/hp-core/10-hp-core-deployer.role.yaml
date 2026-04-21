@@ -1,0 +1,38 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: hp-core-deployer
+  namespace: hp-core
+  labels:
+    homeplate.io/tier: deploy
+    homeplate.io/namespace: hp-core
+rules:
+  # Workloads
+  - apiGroups: ["apps"]
+    resources: ["deployments","replicasets"]
+    verbs: ["get","list","watch","create","update","patch"]
+
+  # Pod read & logs (배포 확인용)
+  - apiGroups: [""]
+    resources: ["pods","pods/log"]
+    verbs: ["get","list","watch"]
+
+  # Service / Config
+  - apiGroups: [""]
+    resources: ["services","configmaps"]
+    verbs: ["get","list","watch","create","update","patch"]
+
+  # Secrets / SA (배포시 필요할 수 있음)
+  - apiGroups: [""]
+    resources: ["secrets","serviceaccounts"]
+    verbs: ["get","list","watch","create","update","patch"]
+
+  # HPA (선택: 배포 파이프라인에서 같이 관리하면 필요)
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get","list","watch","create","update","patch"]
+
+  # Istio routing (hp-core 내 VirtualService/DestinationRule만)
+  - apiGroups: ["networking.istio.io"]
+    resources: ["virtualservices","destinationrules"]
+    verbs: ["get","list","watch","create","update","patch"]

@@ -1,0 +1,38 @@
+# ────────────────────────────────────────────────────────────────────
+# 운영 환경 (prod)
+#
+# 설계 원칙:
+#   - replica(복제) 대신 단일 노드(standalone)로 비용/복잡도 최소화
+#   - 대신 CPU/Memory/Storage/안정성 옵션을 상향
+# ────────────────────────────────────────────────────────────────────
+
+# standalone: 단일 인스턴스
+architecture: standalone
+
+persistence:
+  size: 50Gi
+  storageClass: "gp3"
+
+resources:
+  requests:
+    cpu: "500m"     
+    memory: "1Gi"
+  limits:
+    cpu: "1000m"
+    memory: "2Gi"
+
+
+# 스케줄링은 dev와 동일하게 data 노드 고정
+nodeSelector:
+  nodepool: data
+
+tolerations:
+  - key: "dedicated"
+    operator: "Equal"
+    value: "data"
+    effect: "NoSchedule"
+
+metrics:
+  # Prometheus 연동 모니터링 활성화
+  # Prometheus가 이 exporter를 통해 MongoDB 메트릭을 수집한다
+  enabled: true

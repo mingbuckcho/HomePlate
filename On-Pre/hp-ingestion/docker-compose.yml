@@ -1,0 +1,254 @@
+# ── 앱 공통 설정 ──────────────────────────────────────────────────────
+# YAML 앵커(&)와 별칭(*)을 사용해서 중복을 제거한다.
+# x-로 시작하는 키는 최상위 레벨에 있을 때만 서비스로 인식되지 않는다.
+x-app-common: &app-common
+  build:
+    context: .
+    dockerfile: Dockerfile
+  env_file:
+    - .env
+  depends_on:
+    mongo:
+      condition: service_healthy
+    mariadb:
+      condition: service_healthy
+    minio:
+      condition: service_healthy
+    kafka:
+      condition: service_healthy
+
+services:
+
+  # ── MongoDB ───────────────────────────────────────────────────────────
+  mongo:
+    image: mongo:7
+    container_name: hp-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: rootpass
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ── MariaDB ───────────────────────────────────────────────────────────
+  mariadb:
+    image: mariadb:10.11
+    container_name: hp-mariadb
+    restart: unless-stopped
+    ports:
+      - "3306:3306"
+    environment:
+      MARIADB_ROOT_PASSWORD: rootpass
+      MARIADB_USER: app
+      MARIADB_PASSWORD: apppass
+    volumes:
+      - mariadb_data:/var/lib/mysql
+      - ./mariadb-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ── MinIO ─────────────────────────────────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    container_name: hp-minio
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # ── Kafka (KRaft 모드, Zookeeper 없음) ────────────────────────────────
+  #
+  # KRaft 모드란:
+  #   기존 Kafka는 클러스터 메타데이터 관리를 위해 Zookeeper가 반드시 필요했다.
+  #   KRaft(Kafka Raft)는 Kafka 자체에 Raft 합의 알고리즘을 내장해서
+  #   Zookeeper 없이도 동작하도록 한다.
+  #   Kafka 3.3부터 프로덕션 사용 가능, 4.x부터 Zookeeper 완전 제거 예정.
+  #
+  # 리스너 2개를 쓰는 이유:
+  #   PLAINTEXT (9092): 컨테이너 내부 통신용. Worker/Exporter 등 앱이 이 주소를 쓴다.
+  #   EXTERNAL (9093): 호스트에서 접근용. kafka-ui, 로컬 테스트 시 localhost:9093 사용.
+  #   같은 리스너를 내외부 모두 쓰면 호스트에서 접속 시 주소 해석이 꼬인다.
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: hp-kafka
+    restart: unless-stopped
+    ports:
+      - "9093:9093"   # 호스트 → 컨테이너 (kafka-ui, 로컬 테스트용)
+    environment:
+      # KRaft 필수 설정
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller          # 이 노드가 브로커이자 컨트롤러
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9094"  # 컨트롤러 선출 투표자 목록
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"           # 클러스터 고유 ID (임의 생성값)
+
+      # 리스너 설정
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,EXTERNAL://0.0.0.0:9093,CONTROLLER://0.0.0.0:9094
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+
+      # 로컬 단일 브로커 설정 (운영에서는 replicas=3에 맞게 조정)
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+      KAFKA_MIN_INSYNC_REPLICAS: 1
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+
+      # 토픽 자동 생성 금지: kafka-init에서 명시적으로 만든다.
+      # 자동 생성을 허용하면 오타로 잘못된 토픽명에 메시지가 쌓이는 사고가 생긴다.
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+
+      # 메시지 보존 기간 7일
+      KAFKA_LOG_RETENTION_HOURS: 168
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "kafka:9092"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s  # KRaft 초기화에 시간이 걸리므로 30초 후부터 체크
+
+  # Kafka 토픽 초기 생성
+  # depends_on + condition: service_healthy 덕분에 Kafka가 완전히 준비된 후 실행된다.
+  kafka-init:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: hp-kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        echo "토픽 생성 중..."
+
+        # --if-not-exists: 이미 있으면 에러 없이 넘어간다. 재실행해도 안전.
+        kafka-topics --create \
+          --bootstrap-server kafka:9092 \
+          --topic hp.crawl.result \
+          --partitions 10 \
+          --replication-factor 1 \
+          --config retention.ms=604800000 \
+          --if-not-exists
+
+        kafka-topics --create \
+          --bootstrap-server kafka:9092 \
+          --topic hp.crawl.exported \
+          --partitions 10 \
+          --replication-factor 1 \
+          --config retention.ms=604800000 \
+          --if-not-exists
+
+        echo "생성된 토픽 목록:"
+        kafka-topics --list --bootstrap-server kafka:9092
+    restart: on-failure  # 실패 시 재시도 (Kafka 준비 전에 실행된 경우)
+
+  # Kafka UI: 토픽/메시지/Consumer Group lag을 브라우저에서 확인
+  # http://localhost:18080
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: hp-kafka-ui
+    restart: unless-stopped
+    ports:
+      - "18080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  # MongoDB 유저·인덱스 + MinIO 버킷 초기 설정 (1회성 Job)
+  # mongo, minio가 완전히 준비된 후 실행된다
+  # K8s에서는 ArgoCD PreSync Hook Job이 동일한 역할을 한다
+  hp-bootstrap:
+    <<: *app-common
+    command: ["sh", "-c", "python -m app.bootstrap_mongo && python -m app.bootstrap_minio && python -m app.seed"]
+    depends_on:
+      mongo:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      mariadb:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    restart: on-failure
+
+  hp-worker:
+    <<: *app-common
+    # deploy.replicas는 Swarm/K8s 전용. docker compose에서는 무시됨.
+    # 로컬에서 복수 워커가 필요하면: docker compose up --scale hp-worker=2
+    command: ["python", "-m", "app.worker"]
+    depends_on:
+      hp-bootstrap:
+        condition: service_completed_successfully
+      mariadb:
+        condition: service_healthy
+
+  hp-exporter:
+    <<: *app-common
+    command: ["python", "-m", "app.exporter"]
+    depends_on:
+      hp-bootstrap:
+        condition: service_completed_successfully
+      mariadb:
+        condition: service_healthy
+
+  hp-outbox-relay:
+    <<: *app-common
+    command: ["python", "-m", "app.outbox_relay"]
+    depends_on:
+      hp-bootstrap:
+        condition: service_completed_successfully
+      mariadb:
+        condition: service_healthy
+
+  hp-slack:
+    <<: *app-common
+    command: ["python", "-m", "app.slack_notifier"]
+    depends_on:
+      hp-bootstrap:
+        condition: service_completed_successfully
+      mariadb:
+        condition: service_healthy
+
+  # 스탈 잡 복구 (K8s CronJob 10분 주기와 동일)
+  hp-reaper:
+    <<: *app-common
+    command: ["sh", "-c", "while true; do python -m app.reaper; sleep 600; done"]
+    depends_on:
+      hp-bootstrap:
+        condition: service_completed_successfully
+      mariadb:
+        condition: service_healthy
+
+volumes:
+  mongo_data:
+  mariadb_data:
+  minio_data:
+  kafka_data:

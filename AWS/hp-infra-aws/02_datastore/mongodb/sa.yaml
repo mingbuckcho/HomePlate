@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mongodb-secrets-sa
+  namespace: mongodb
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::681224237958:role/eks-mongodb-secrets-manager-role

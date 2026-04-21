@@ -1,0 +1,25 @@
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaUser
+metadata:
+  name: hp-slack
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: ticketing
+spec:
+  authentication:
+    type: tls
+  authorization:
+    type: simple
+    acls:
+      # slack_notifier.py ← hp.crawl.exported consume
+      # 가격변동 이벤트를 받아 Slack에 알림을 보낸다
+      - resource:
+          type: topic
+          name: hp.crawl.exported
+        operations: [Read, Describe]
+      # Consumer Group 오프셋 관리 권한
+      # group.id = "hp-slack-notifier-group" (slack_notifier.py CONSUMER_GROUP_ID)
+      - resource:
+          type: group
+          name: hp-slack-notifier-group
+        operations: [Read, Describe]

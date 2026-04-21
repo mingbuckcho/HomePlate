@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build / Next.js
+.next/
+out/
+build/
+dist/
+
+# Env (비밀키 등 절대 커밋 금지)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.local
+
+# Debug / IDE
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Vercel
+.vercel
+
+# TypeScript
+*.tsbuildinfo
+
+# Optional: 압축 백업 등
+*.zip
+
+# Backend (별도 저장소용, 프론트엔드만 올림)
+backend/

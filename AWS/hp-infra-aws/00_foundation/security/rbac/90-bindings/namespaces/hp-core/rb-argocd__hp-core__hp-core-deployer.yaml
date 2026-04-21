@@ -1,0 +1,13 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rb-argocd__hp-core__hp-core-deployer
+  namespace: hp-core
+subjects:
+  - kind: ServiceAccount
+    name: argocd-application-controller
+    namespace: cicd
+roleRef:
+  kind: Role
+  name: hp-core-deployer
+  apiGroup: rbac.authorization.k8s.io

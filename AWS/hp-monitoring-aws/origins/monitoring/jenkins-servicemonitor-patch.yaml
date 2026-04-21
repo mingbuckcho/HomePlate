@@ -1,0 +1,17 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: jenkins
+  namespace: cicd
+spec:
+  endpoints:
+    - interval: 60s
+      path: /prometheus
+      port: http
+      basicAuth:
+        username:
+          name: jenkins-monitoring-auth
+          key: username
+        password:
+          name: jenkins-monitoring-auth
+          key: password

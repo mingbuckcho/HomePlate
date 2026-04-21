@@ -1,0 +1,28 @@
+# Dependencies & build output
+node_modules
+.next
+out
+dist
+build
+
+# Git & IDE
+.git
+.gitignore
+.cursor
+.vscode
+*.log
+npm-debug.log*
+
+# Env (optional: remove if you need .env in image)
+.env*.local
+.env
+
+# Backend (프론트 전용 이미지)
+backend
+
+# Misc
+README*
+Dockerfile*
+.dockerignore
+*.md
+.DS_Store

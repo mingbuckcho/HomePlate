@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hp-ingestion
+  namespace: argocd
+spec:
+  project: default
+  source:
+    # 깃허브 인프라 레포 주소
+    repoURL: https://github.com/homeplate-project/hp-infra-aws.git
+    targetRevision: HEAD
+    # 인제션 파일들이 모여 있는 경로
+    path: 04_workers/hp-workers
+  destination:
+    server: https://kubernetes.default.svc
+    # 인제션 앱들이 배포될 네임스페이스
+    namespace: hp-workers
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true  # hp-workers 네임스페이스가 없으면 자동으로 생성
